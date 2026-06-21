@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>居酒屋テトリス - 接地猶予(ロックダウンディレイ)搭載版</title>
+    <style>
+        body {
+            display: flex; justify-content: center; align-items: flex-start;
+            background-color: #222; color: #fff; margin: 0; padding-top: 5px;
+            padding-bottom: 50px; 
+            font-family: sans-serif; overscroll-behavior: none; 
+            touch-action: manipulation;
+        }
+        #app-container { 
+            display: flex; flex-direction: row; gap: 5px; align-items: flex-start; 
+            justify-content: center; width: 100%; max-width: 100vw; padding: 0 5px; box-sizing: border-box;
+        }
+
+        #left-panel {
+            background-color: #333; padding: 8px; border-radius: 8px;
+            border: 1px solid #555; display: none; flex-direction: column;
+            align-items: center; width: 50px;
+        }
+        #left-panel h3 { margin-top: 0; font-size: 10px; color: #ddd; text-align: center; margin-bottom: 8px; }
+        .mini-mino { display: grid; gap: 1px; margin-bottom: 8px; }
+        .mini-cell { width: 10px; height: 10px; box-sizing: border-box; }
+
+        #main-panel { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 340px; }
+        
+        #top-bar {
+            display: flex; gap: 5px; width: 100%; margin-bottom: 5px;
+        }
+        #room-info {
+            background-color: #444; padding: 4px; border-radius: 5px; 
+            font-size: 10px; word-break: break-all; border: 1px solid #777; 
+            flex: 1; display: flex; flex-direction: column; justify-content: center;
+        }
+        #copy-url-btn {
+            margin-top: 2px; padding: 2px; font-size: 10px; cursor: pointer;
+            background-color: #007bff; color: white; border: none; border-radius: 3px;
+        }
+        #reset-game-btn {
+            background-color: #555; color: #fff; border: 1px solid #777;
+            padding: 0 10px; border-radius: 5px; cursor: pointer; 
+            font-weight: bold; font-size: 11px; white-space: nowrap;
+        }
+        #reset-game-btn:active { background-color: #444; }
+
+        #ui-area { width: 100%; margin-bottom: 5px; }
+
+        #tetris-ui { 
+            background-color: #444; padding: 6px 10px; border-radius: 8px; 
+            border: 2px solid #007bff; display: flex; justify-content: space-between; align-items: center;
+        }
+        #tetris-next-box { 
+            padding: 4px 8px; background-color: #333; border-radius: 5px; 
+            display: flex; flex-direction: column; align-items: center; 
+        }
+        #tetris-next-draw { height: 28px; display: flex; align-items: center; justify-content: center; }
+
+        #izakaya-ui { display: none; flex-direction: column; gap: 4px; }
+        .izakaya-row { display: flex; gap: 5px; width: 100%; align-items: center; }
+        #stock-display {
+            font-size: 14px; font-weight: bold; color: #00ffcc; background-color: #111;
+            padding: 6px; border-radius: 5px; border: 1px solid #00ffcc; flex: 1; text-align: center;
+        }
+        .action-btn {
+            font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer;
+        }
+        .action-btn:active { transform: translateY(2px); box-shadow: none !important; }
+        .action-btn:disabled { background-color: #555 !important; color: #888 !important; cursor: not-allowed; box-shadow: none !important; transform: none !important; }
+        
+        #add-stock-btn { background-color: #28a745; padding: 6px; font-size: 13px; flex: 1; box-shadow: 0 3px 0 #1e7e34; }
+        #draw-btn { background-color: #ff5555; padding: 8px; font-size: 14px; flex: 1; box-shadow: 0 3px 0 #cc0000; }
+        #timer-display { width: 60px; font-size: 14px; font-weight: bold; color: #ffcc00; text-align: center; }
+
+        #exclude-container { background-color: #333; padding: 4px; border-radius: 5px; border: 1px solid #555; }
+        #exclude-btns { display: flex; gap: 3px; justify-content: center; }
+        .exclude-btn {
+            width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 12px; color: #fff; text-shadow: 1px 1px 1px #000;
+            border: 1px solid #fff; border-radius: 4px; cursor: pointer; user-select: none;
+        }
+        .exclude-btn.excluded { opacity: 0.2; border-color: #ff5555; transform: scale(0.9); }
+
+        #board {
+            display: grid; gap: 1px; background-color: #555; border: 2px solid #999; 
+            user-select: none; -webkit-touch-callout: none; position: relative; margin: 0 auto;
+        }
+        .cell { background-color: #111; box-sizing: border-box; }
+
+        #virtual-pad {
+            display: none; gap: 8px; margin-top: 8px; width: 100%; justify-content: center;
+        }
+        .pad-btn {
+            background-color: #333; color: white; border: 2px solid #777;
+            border-radius: 8px; width: 60px; height: 50px; font-size: 20px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; user-select: none; touch-action: manipulation;
+            box-shadow: 0 4px 0 #111;
+        }
+        .pad-btn:active { transform: translateY(4px); box-shadow: none; background-color: #555; }
+
+        .overlay {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); color: #fff; font-weight: bold;
+            flex-direction: column; justify-content: center; align-items: center; z-index: 10; text-align: center;
+        }
+        .overlay button { margin-top: 15px; padding: 8px 16px; font-size: 14px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
+        #clear-overlay { color: #00ffcc; font-size: 32px; }
+        #gameover-overlay { color: #ff5555; font-size: 24px; }
+        #start-overlay { display: flex; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="left-panel">
+        <h3>今出る<br>ミノ</h3>
+        <div id="available-minos-container"></div>
+    </div>
+
+    <div id="main-panel">
+        <div id="top-bar">
+            <div id="room-info">
+                <span id="room-url" style="color: #00ffcc;"></span>
+                <button id="copy-url-btn">URLをコピー</button>
+            </div>
+            <button id="reset-game-btn">🔄 全員リセット</button>
+        </div>
+
+        <div id="ui-area">
+            <div id="tetris-ui">
+                <div style="text-align: left;">
+                    <div style="color: #007bff; font-size: 14px; font-weight: bold;">【盤面作成フェーズ】</div>
+                    <div style="color: #ddd; font-size: 11px; margin-top: 2px;">通常プレイでゲームオーバーになれ！</div>
+                    <div style="font-size: 11px; margin-top: 6px; color: #ffcc00; font-weight: bold;">
+                        TIME: <span id="time-display">0</span>s | LV: <span id="level-display">1</span>
+                    </div>
+                </div>
+                <div id="tetris-next-box">
+                    <div style="font-size: 10px; color: #ffcc00; margin-bottom: 2px;">NEXT</div>
+                    <div id="tetris-next-draw"></div>
+                </div>
+            </div>
+
+            <div id="izakaya-ui">
+                <div class="izakaya-row">
+                    <div id="stock-display">ストック: 0</div>
+                    <button id="add-stock-btn" class="action-btn">🍻 1品完食(+1)</button>
+                </div>
+                <div id="exclude-container">
+                    <div style="font-size: 11px; margin-bottom: 4px; color: #ddd; text-align: center;">出ないミノを除外パネル</div>
+                    <div id="exclude-btns"></div>
+                </div>
+                <div class="izakaya-row">
+                    <button id="draw-btn" class="action-btn" disabled>👇 ブロックを引く</button>
+                    <div id="timer-display"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="board">
+            <div id="start-overlay" class="overlay">
+                <div>まずは通常プレイ！<br><span style="font-size: 11px; color: #ddd;">負けた盤面で居酒屋モード開始</span></div>
+                <button id="start-tetris-btn">テトリスを開始</button>
+            </div>
+            <div id="gameover-overlay" class="overlay">
+                <div>GAME OVER!</div>
+                <button id="start-izakaya-btn">居酒屋モード開始</button>
+            </div>
+            <div id="clear-overlay" class="overlay">
+                <div>CLEAR!</div>
+                <button id="clear-restart-btn">最初からやり直す</button>
+            </div>
+        </div>
+
+        <div id="virtual-pad">
+            <button id="btn-left" class="pad-btn">◀️</button>
+            <button id="btn-rotate" class="pad-btn">🔃</button>
+            <button id="btn-right" class="pad-btn">▶️</button>
+            <button id="btn-drop" class="pad-btn">⏬</button>
+        </div>
+    </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+
+<script>
+    const socket = io();
+    const urlParams = new URLSearchParams(window.location.search);
+    let roomId = urlParams.get('room');
+    if (!roomId) {
+        roomId = Math.random().toString(36).substring(2, 8);
+        window.location.href = `?room=${roomId}`;
+    }
+
+    const roomUrlText = document.getElementById('room-url');
+    roomUrlText.innerText = window.location.href;
+    document.getElementById('copy-url-btn').addEventListener('click', () => {
+        navigator.clipboard.writeText(window.location.href);
+        alert("URLをコピーしました！LINE等で友達に送ってください。");
+    });
+
+    socket.emit('joinRoom', roomId);
+
+    function broadcastState() {
+        socket.emit('updateState', {
+            boardData, gameMode, ROWS, currentShape, pieceX, pieceY, stockCount,
+            excludedMinos: Array.from(excludedMinos), nextTetrisMinoId, timeLeft,
+            gameTime, gameLevel, currentDropSpeed
+        });
+    }
+
+    socket.on('syncState', (state) => {
+        if (!state || Object.keys(state).length === 0) return;
+        if (state.boardData) boardData = state.boardData;
+        if (state.gameMode) gameMode = state.gameMode;
+        if (state.ROWS) { ROWS = state.ROWS; updateBoardLayout(); }
+        currentShape = state.currentShape || null;
+        pieceX = state.pieceX || 0; 
+        pieceY = state.pieceY || 0;
+        stockCount = state.stockCount || 0;
+        excludedMinos = new Set(state.excludedMinos || []);
+        nextTetrisMinoId = state.nextTetrisMinoId || null;
+        
+        if (state.gameTime !== undefined) {
+            gameTime = state.gameTime;
+            document.getElementById('time-display').innerText = gameTime;
+        }
+        if (state.gameLevel !== undefined) {
+            gameLevel = state.gameLevel;
+            document.getElementById('level-display').innerText = gameLevel === 4 ? "4(MAX)" : gameLevel;
+        }
+        if (state.currentDropSpeed !== undefined) {
+            currentDropSpeed = state.currentDropSpeed;
+        }
+        if (state.timeLeft !== undefined) {
+            timeLeft = state.timeLeft;
+            timerDisplay.innerText = timeLeft > 0 ? `残り時間: ${timeLeft}秒` : "";
+        }
+
+        const virtualPad = document.getElementById('virtual-pad');
+
+        if (gameMode === 'INIT') {
+            startOverlay.style.display = 'flex'; gameoverOverlay.style.display = 'none';
+            clearOverlay.style.display = 'none'; tetrisUi.style.display = 'flex';
+            izakayaUi.style.display = 'none'; leftPanel.style.display = 'none';
+            timerDisplay.innerText = ""; tetrisNextDraw.innerHTML = "";
+            virtualPad.style.display = 'none';
+        } else if (gameMode === 'TETRIS') {
+            startOverlay.style.display = 'none'; gameoverOverlay.style.display = 'none';
+            virtualPad.style.display = 'flex';
+        } else if (gameMode === 'PAUSE') {
+            gameoverOverlay.style.display = 'flex';
+            virtualPad.style.display = 'none';
+        } else if (gameMode === 'IZAKAYA') {
+            gameoverOverlay.style.display = 'none'; tetrisUi.style.display = 'none';
+            izakayaUi.style.display = 'flex'; leftPanel.style.display = 'flex';
+            startOverlay.style.display = 'none'; virtualPad.style.display = 'flex';
+        } else if (gameMode === 'CLEARED') {
+            clearOverlay.style.display = 'flex';
+            virtualPad.style.display = 'none';
+        }
+        updateExcludeUI_NoSync(); drawNextTetrisMinoUI(); drawBoard();
+    });
+
+    let ROWS = 20; const COLS = 10;
+    let boardData = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+
+    const MINOS = {
+        1: { name: 'I', color: '#00FFFF', shape: [[1, 1, 1, 1]] },
+        2: { name: 'J', color: '#0000FF', shape: [[2, 0, 0], [2, 2, 2]] },
+        3: { name: 'L', color: '#FFA500', shape: [[0, 0, 3], [3, 3, 3]] },
+        4: { name: 'O', color: '#FFFF00', shape: [[4, 4], [4, 4]] },
+        5: { name: 'S', color: '#00FF00', shape: [[0, 5, 5], [5, 5, 0]] },
+        6: { name: 'T', color: '#800080', shape: [[0, 6, 0], [6, 6, 6]] },
+        7: { name: 'Z', color: '#FF0000', shape: [[7, 7, 0], [0, 7, 7]] },
+    };
+
+    function getColor(id) { return id === 0 ? '#111' : (MINOS[id] ? MINOS[id].color : '#111'); }
+
+    const boardElement = document.getElementById('board');
+    const tetrisUi = document.getElementById('tetris-ui');
+    const izakayaUi = document.getElementById('izakaya-ui');
+    const leftPanel = document.getElementById('left-panel');
+    const drawBtn = document.getElementById('draw-btn');
+    const addStockBtn = document.getElementById('add-stock-btn');
+    const stockDisplay = document.getElementById('stock-display');
+    const timerDisplay = document.getElementById('timer-display');
+    const excludeBtnsElement = document.getElementById('exclude-btns');
+    const availableMinosContainer = document.getElementById('available-minos-container');
+    const tetrisNextDraw = document.getElementById('tetris-next-draw');
+    const startOverlay = document.getElementById('start-overlay');
+    const gameoverOverlay = document.getElementById('gameover-overlay');
+    const clearOverlay = document.getElementById('clear-overlay');
+    const virtualPad = document.getElementById('virtual-pad');
+
+    let gameMode = 'INIT'; 
+    let currentShape = null; let pieceX = 0; let pieceY = 0;
+    let dropTimer = null; let countdownTimer = null; let timeLeft = 5;
+    let stockCount = 0; let excludedMinos = new Set(); 
+    let tetrisHistory = []; let droughtCounters = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0}; 
+    let nextTetrisMinoId = null;
+
+    let gameTime = 0;
+    let gameLevel = 1;
+    let currentDropSpeed = 800;
+    let timeInterval = null;
+    
+    // ★追加：接地時の猶予タイマー
+    let lockDelayTimer = null; 
+
+    function updateBoardLayout() {
+        const cellSize = ROWS === 28 ? 16 : 22; 
+        boardElement.style.gridTemplateColumns = `repeat(10, ${cellSize}px)`;
+        boardElement.style.gridTemplateRows = `repeat(${ROWS}, ${cellSize}px)`;
+        return cellSize;
+    }
+
+    function forceRestart() {
+        if (!confirm("この部屋のゲームを完全にリセットしますか？")) return;
+        clearInterval(dropTimer); clearInterval(countdownTimer); clearInterval(timeInterval);
+        if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+
+        dropTimer = null; countdownTimer = null; timeInterval = null;
+        
+        ROWS = 20; boardData = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        gameMode = 'INIT'; currentShape = null; pieceX = 0; pieceY = 0;
+        stockCount = 0; excludedMinos.clear(); tetrisHistory = [];
+        droughtCounters = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0};
+        nextTetrisMinoId = null; timeLeft = 5;
+        
+        gameTime = 0;
+        gameLevel = 1;
+        currentDropSpeed = 800;
+        document.getElementById('time-display').innerText = 0;
+        document.getElementById('level-display').innerText = 1;
+
+        updateBoardLayout(); 
+        startOverlay.style.display = 'flex'; gameoverOverlay.style.display = 'none';
+        clearOverlay.style.display = 'none'; tetrisUi.style.display = 'flex';
+        izakayaUi.style.display = 'none'; leftPanel.style.display = 'none';
+        timerDisplay.innerText = ""; tetrisNextDraw.innerHTML = "";
+        virtualPad.style.display = 'none'; 
+
+        updateExcludeUI_NoSync(); drawBoard(); broadcastState();
+    }
+
+    document.getElementById('reset-game-btn').addEventListener('click', forceRestart);
+    document.getElementById('clear-restart-btn').addEventListener('click', forceRestart);
+
+    document.getElementById('start-tetris-btn').addEventListener('click', () => {
+        startOverlay.style.display = 'none'; gameMode = 'TETRIS';
+        virtualPad.style.display = 'flex'; 
+        
+        gameTime = 0;
+        gameLevel = 1;
+        currentDropSpeed = 800;
+        document.getElementById('time-display').innerText = gameTime;
+        document.getElementById('level-display').innerText = gameLevel;
+        
+        clearInterval(timeInterval);
+        timeInterval = setInterval(() => {
+            if (gameMode !== 'TETRIS') {
+                clearInterval(timeInterval);
+                return;
+            }
+            gameTime++;
+            document.getElementById('time-display').innerText = gameTime;
+
+            if (gameTime % 20 === 0 && gameLevel < 4) {
+                gameLevel++;
+                document.getElementById('level-display').innerText = gameLevel === 4 ? "4(MAX)" : gameLevel;
+                currentDropSpeed = currentDropSpeed / 1.5;
+                
+                if (dropTimer) {
+                    clearInterval(dropTimer);
+                    dropTimer = setInterval(moveDownTetris, currentDropSpeed);
+                }
+            }
+            broadcastState(); 
+        }, 1000);
+
+        spawnTetrisPiece(); broadcastState(); 
+    });
+
+    function getSmartRandomMino() {
+        let selectedId = null;
+        for (let id = 1; id <= 7; id++) { if (droughtCounters[id] >= 10) { selectedId = id; break; } }
+        if (selectedId === null) {
+            while (true) {
+                let r = Math.floor(Math.random() * 7) + 1;
+                if (tetrisHistory.length === 2 && tetrisHistory[0] === r && tetrisHistory[1] === r) continue;
+                selectedId = r; break;
+            }
+        }
+        for (let id = 1; id <= 7; id++) {
+            if (id === selectedId) droughtCounters[id] = 0; else droughtCounters[id]++;
+        }
+        tetrisHistory.unshift(selectedId);
+        if (tetrisHistory.length > 2) tetrisHistory.pop(); 
+        return selectedId;
+    }
+
+    function drawNextTetrisMinoUI() {
+        tetrisNextDraw.innerHTML = '';
+        if (!nextTetrisMinoId) return;
+        const mino = MINOS[nextTetrisMinoId];
+        const minoDiv = document.createElement('div');
+        minoDiv.style.display = 'grid'; minoDiv.style.gap = '1px';
+        minoDiv.style.gridTemplateColumns = `repeat(${mino.shape[0].length}, 12px)`;
+        for (let r = 0; r < mino.shape.length; r++) {
+            for (let c = 0; c < mino.shape[0].length; c++) {
+                const cell = document.createElement('div');
+                cell.style.width = '12px'; cell.style.height = '12px'; cell.style.boxSizing = 'border-box';
+                if (mino.shape[r][c] !== 0) { cell.style.backgroundColor = mino.color; cell.style.border = '1px solid #000'; }
+                minoDiv.appendChild(cell);
+            }
+        }
+        tetrisNextDraw.appendChild(minoDiv);
+    }
+
+    function spawnTetrisPiece() {
+        if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+        
+        if (nextTetrisMinoId === null) nextTetrisMinoId = getSmartRandomMino();
+        let spawnId = nextTetrisMinoId;
+        nextTetrisMinoId = getSmartRandomMino();
+        drawNextTetrisMinoUI();
+
+        currentShape = MINOS[spawnId].shape.map(row => [...row]);
+        pieceY = 0; pieceX = Math.floor((COLS - currentShape[0].length) / 2);
+
+        if (checkCollision(0, 0)) { gameOverTetris(); return; }
+        drawBoard(); broadcastState();
+        
+        clearInterval(dropTimer);
+        dropTimer = setInterval(moveDownTetris, currentDropSpeed);
+    }
+
+    // ★追加：ブロックが床に触れた時に0.5秒の猶予を与える関数
+    function handleLockDelay() {
+        if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+        if (checkCollision(0, 1)) {
+            lockDelayTimer = setTimeout(() => {
+                // 0.5秒後にまだ床に触れたままならロックする
+                if (currentShape && checkCollision(0, 1)) {
+                    if (gameMode === 'TETRIS') lockPieceTetris();
+                }
+                lockDelayTimer = null;
+            }, 500);
+        }
+    }
+
+    function moveDownTetris() {
+        if (!checkCollision(0, 1)) {
+            pieceY++;
+            // 落下できたら猶予をキャンセル
+            if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+        } else {
+            // 下が床で、まだ猶予タイマーが動いていなければスタート
+            if (!lockDelayTimer) {
+                handleLockDelay();
+            }
+        }
+        drawBoard(); broadcastState(); 
+    }
+
+    function lockPieceTetris() {
+        clearInterval(dropTimer);
+        if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+
+        for (let r = 0; r < currentShape.length; r++) {
+            for (let c = 0; c < currentShape[0].length; c++) {
+                if (currentShape[r][c] !== 0) boardData[pieceY + r][pieceX + c] = currentShape[r][c];
+            }
+        }
+        
+        for (let r = ROWS - 1; r >= 0; r--) {
+            let isFull = true;
+            for (let c = 0; c < COLS; c++) { if (boardData[r][c] === 0) { isFull = false; break; } }
+            if (isFull) { 
+                boardData.splice(r, 1); 
+                boardData.unshift(Array(COLS).fill(0)); 
+                r++; 
+            }
+        }
+        currentShape = null; spawnTetrisPiece();
+    }
+
+    function gameOverTetris() {
+        gameMode = 'PAUSE'; clearInterval(dropTimer); clearInterval(timeInterval); currentShape = null;
+        if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+        virtualPad.style.display = 'none'; 
+        drawBoard(); gameoverOverlay.style.display = 'flex'; broadcastState();
+    }
+
+    document.getElementById('start-izakaya-btn').addEventListener('click', () => {
+        gameoverOverlay.style.display = 'none'; tetrisUi.style.display = 'none';
+        izakayaUi.style.display = 'flex'; leftPanel.style.display = 'flex'; gameMode = 'IZAKAYA';
+        virtualPad.style.display = 'flex'; 
+
+        ROWS = 28; 
+        for (let i = 0; i < 8; i++) { boardData.unshift(Array(COLS).fill(0)); }
+        updateBoardLayout(); 
+        initExcludeUI(); drawAvailableMinos(); updateStockUI(); drawBoard(); broadcastState(); 
+    });
+
+    function drawAvailableMinos() {
+        availableMinosContainer.innerHTML = '';
+        for (let id = 1; id <= 7; id++) {
+            if (!excludedMinos.has(id)) {
+                const mino = MINOS[id];
+                const minoDiv = document.createElement('div');
+                minoDiv.classList.add('mini-mino');
+                minoDiv.style.gridTemplateColumns = `repeat(${mino.shape[0].length}, 10px)`;
+                for (let r = 0; r < mino.shape.length; r++) {
+                    for (let c = 0; c < mino.shape[0].length; c++) {
+                        const cell = document.createElement('div'); cell.classList.add('mini-cell');
+                        cell.style.width = '10px'; cell.style.height = '10px';
+                        if (mino.shape[r][c] !== 0) { cell.style.backgroundColor = mino.color; cell.style.border = '1px solid #000'; }
+                        minoDiv.appendChild(cell);
+                    }
+                }
+                availableMinosContainer.appendChild(minoDiv);
+            }
+        }
+    }
+
+    function updateStockUI() {
+        stockDisplay.innerText = `ストック: ${stockCount}`;
+        const totalCost = 1 + excludedMinos.size;
+        if (gameMode !== 'IZAKAYA') return;
+        if (stockCount >= totalCost && !currentShape) {
+            drawBtn.disabled = false; drawBtn.innerText = `👇 引く（消費: ${totalCost}）`;
+        } else {
+            drawBtn.disabled = true; drawBtn.innerText = currentShape ? "操作中..." : `👇 引く（消費: ${totalCost}）`;
+        }
+    }
+
+    function updateExcludeUI_NoSync() {
+        const btns = excludeBtnsElement.children;
+        for (let i = 0; i < 7; i++) {
+            const id = i + 1;
+            if (excludedMinos.has(id)) btns[i].classList.add('excluded'); 
+            else btns[i].classList.remove('excluded');
+        }
+        updateStockUI(); drawAvailableMinos();
+    }
+
+    function toggleExclude(id) {
+        if (currentShape || gameMode !== 'IZAKAYA') return; 
+        if (excludedMinos.has(id)) { excludedMinos.delete(id); } 
+        else {
+            if (excludedMinos.size >= 6) { alert("最低1つは残してください！"); return; }
+            if (stockCount < 1 + excludedMinos.size + 1) { alert("ストック不足！"); return; }
+            excludedMinos.add(id);
+        }
+        updateExcludeUI_NoSync(); broadcastState(); 
+    }
+
+    function initExcludeUI() {
+        excludeBtnsElement.innerHTML = '';
+        for (let id = 1; id <= 7; id++) {
+            const btn = document.createElement('div');
+            btn.classList.add('exclude-btn'); btn.style.backgroundColor = MINOS[id].color;
+            btn.innerText = MINOS[id].name;
+            btn.addEventListener('click', () => toggleExclude(id));
+            excludeBtnsElement.appendChild(btn);
+        }
+    }
+
+    addStockBtn.addEventListener('click', () => {
+        if (gameMode !== 'IZAKAYA') return;
+        stockCount++; updateStockUI(); broadcastState(); 
+    });
+
+    drawBtn.addEventListener('click', () => {
+        if (gameMode !== 'IZAKAYA') return;
+        const totalCost = 1 + excludedMinos.size;
+        if (currentShape || stockCount < totalCost) return;
+        stockCount -= totalCost; updateStockUI();
+
+        let availableIds = [1, 2, 3, 4, 5, 6, 7].filter(id => !excludedMinos.has(id));
+        let randomId = availableIds[Math.floor(Math.random() * availableIds.length)];
+        currentShape = MINOS[randomId].shape.map(row => [...row]);
+        pieceY = 0; pieceX = Math.floor((COLS - currentShape[0].length) / 2);
+
+        if (checkCollision(0, 0)) { alert("これ以上ブロックを置けません！"); lockPieceIzakaya(); return; }
+        timeLeft = 5; timerDisplay.innerText = `${timeLeft}秒`;
+        drawBoard(); broadcastState(); 
+        clearInterval(countdownTimer);
+        countdownTimer = setInterval(updateCountdownIzakaya, 1000);
+    });
+
+    function updateCountdownIzakaya() {
+        if (gameMode !== 'IZAKAYA') return;
+        timeLeft--;
+        if (timeLeft <= 0) { pieceY = getLandingY(); lockPieceIzakaya(); } 
+        else { timerDisplay.innerText = `${timeLeft}秒`; broadcastState(); }
+    }
+
+    function lockPieceIzakaya() {
+        clearInterval(countdownTimer); countdownTimer = null; timerDisplay.innerText = ""; 
+        if (!currentShape) return;
+        for (let r = 0; r < currentShape.length; r++) {
+            for (let c = 0; c < currentShape[0].length; c++) {
+                if (currentShape[r][c] !== 0) boardData[pieceY + r][pieceX + c] = currentShape[r][c];
+            }
+        }
+        for (let r = ROWS - 1; r >= 0; r--) {
+            let isFull = true;
+            for (let c = 0; c < COLS; c++) { if (boardData[r][c] === 0) { isFull = false; break; } }
+            if (isFull) { boardData.splice(r, 1); boardData.unshift(Array(COLS).fill(0)); r++; }
+        }
+
+        let bottomLineCleared = true;
+        for (let c = 0; c < COLS; c++) { if (boardData[ROWS - 1][c] !== 0) { bottomLineCleared = false; break; } }
+
+        if (bottomLineCleared) { 
+            gameMode = 'CLEARED'; clearOverlay.style.display = 'flex'; 
+            virtualPad.style.display = 'none'; 
+        } 
+        else { excludedMinos.clear(); updateExcludeUI_NoSync(); }
+        
+        currentShape = null; updateStockUI(); drawBoard(); broadcastState(); 
+    }
+
+    function checkCollision(offsetX, offsetY, shapeToCheck = currentShape) {
+        for (let r = 0; r < shapeToCheck.length; r++) {
+            for (let c = 0; c < shapeToCheck[0].length; c++) {
+                if (shapeToCheck[r][c] !== 0) {
+                    let newY = pieceY + r + offsetY; let newX = pieceX + c + offsetX;
+                    if (newX < 0 || newX >= COLS || newY >= ROWS || (newY >= 0 && boardData[newY][newX] !== 0)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function getLandingY() {
+        const minoRows = currentShape.length; let landingY = pieceY; 
+        for (let testY = pieceY; testY <= ROWS - minoRows; testY++) {
+            let isCollision = false;
+            for (let r = 0; r < minoRows; r++) {
+                for (let c = 0; c < currentShape[0].length; c++) {
+                    if (currentShape[r][c] !== 0 && boardData[testY + r][pieceX + c] !== 0) { isCollision = true; break; }
+                }
+                if (isCollision) break;
+            }
+            if (isCollision) break; landingY = testY;
+        }
+        return landingY;
+    }
+
+    function drawBoard() {
+        const cells = boardElement.querySelectorAll('.cell');
+        cells.forEach(cell => cell.remove());
+        const cellSize = ROWS === 28 ? 16 : 22; 
+        let viewData = boardData.map(row => [...row]);
+        
+        if (currentShape && gameMode !== 'PAUSE' && gameMode !== 'CLEARED') {
+            let landingY = getLandingY();
+            for (let r = 0; r < currentShape.length; r++) {
+                for (let c = 0; c < currentShape[0].length; c++) {
+                    if (currentShape[r][c] !== 0) viewData[landingY + r][pieceX + c] = currentShape[r][c] + 10;
+                }
+            }
+            for (let r = 0; r < currentShape.length; r++) {
+                for (let c = 0; c < currentShape[0].length; c++) {
+                    if (currentShape[r][c] !== 0 && pieceY + r >= 0) viewData[pieceY + r][pieceX + c] = currentShape[r][c];
+                }
+            }
+        }
+
+        for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.style.width = `${cellSize}px`; cell.style.height = `${cellSize}px`;
+                let val = viewData[y][x];
+                if (val > 10) {
+                    cell.style.backgroundColor = getColor(val - 10); cell.style.opacity = '0.3';
+                } else {
+                    cell.style.backgroundColor = getColor(val);
+                }
+                boardElement.insertBefore(cell, startOverlay); 
+            }
+        }
+    }
+
+    function movePiece(direction) {
+        if (!currentShape || (gameMode !== 'TETRIS' && gameMode !== 'IZAKAYA')) return;
+        let oldX = pieceX;
+        pieceX += direction;
+        if (checkCollision(0, 0)) {
+            pieceX = oldX; 
+        } else {
+            // ★追加：動かした時に接地していれば猶予をリセット
+            if (gameMode === 'TETRIS') handleLockDelay();
+            drawBoard(); broadcastState(); 
+        }
+    }
+
+    function rotateShape() {
+        if (!currentShape || (gameMode !== 'TETRIS' && gameMode !== 'IZAKAYA')) return;
+        const rows = currentShape.length; const cols = currentShape[0].length;
+        let rotated = Array.from({ length: cols }, () => Array(rows).fill(0));
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) rotated[c][rows - 1 - r] = currentShape[r][c];
+        }
+        const kickOffsets = [0, -1, 1, -2, 2];
+        let canRotate = false;
+        for (let offset of kickOffsets) {
+            if (!checkCollision(offset, 0, rotated)) {
+                pieceX += offset; currentShape = rotated; canRotate = true; break;
+            }
+        }
+        if (canRotate) { 
+            // ★追加：回転した時に接地していれば猶予をリセット
+            if (gameMode === 'TETRIS') handleLockDelay();
+            drawBoard(); broadcastState(); 
+        }
+    }
+
+    function hardDrop() {
+        if (!currentShape || (gameMode !== 'TETRIS' && gameMode !== 'IZAKAYA')) return;
+        if (lockDelayTimer) { clearTimeout(lockDelayTimer); lockDelayTimer = null; }
+        pieceY = getLandingY();
+        if (gameMode === 'TETRIS') lockPieceTetris();
+        else if (gameMode === 'IZAKAYA') lockPieceIzakaya();
+    }
+
+    document.getElementById('btn-left').addEventListener('click', () => movePiece(-1));
+    document.getElementById('btn-right').addEventListener('click', () => movePiece(1));
+    document.getElementById('btn-rotate').addEventListener('click', rotateShape);
+    document.getElementById('btn-drop').addEventListener('click', hardDrop);
+
+    updateBoardLayout(); 
+    initExcludeUI();
+    drawBoard();
+</script>
+</body>
+</html>
