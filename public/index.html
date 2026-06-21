@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>居酒屋テトリス - ロビー＆ターン機能搭載版</title>
+    <title>居酒屋テトリス - スマホ完全対応版</title>
     <style>
         body {
             display: flex; justify-content: center; align-items: flex-start;
@@ -63,7 +63,7 @@
             font-size: 14px; font-weight: bold; color: #00ffcc; background-color: #111;
             padding: 6px; border-radius: 5px; border: 1px solid #00ffcc; flex: 1; text-align: center;
         }
-        .action-btn { font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .action-btn { font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; touch-action: manipulation; }
         .action-btn:active { transform: translateY(2px); box-shadow: none !important; }
         .action-btn:disabled { background-color: #555 !important; color: #888 !important; cursor: not-allowed; box-shadow: none !important; transform: none !important; }
         
@@ -81,7 +81,7 @@
         .exclude-btn.excluded { opacity: 0.2; border-color: #ff5555; transform: scale(0.9); }
 
         #board {
-            display: none; /* 初期はロビーなので非表示 */
+            display: none; 
             gap: 1px; background-color: #555; border: 2px solid #999; 
             user-select: none; -webkit-touch-callout: none; position: relative; margin: 0 auto;
         }
@@ -108,7 +108,6 @@
         #clear-overlay { color: #00ffcc; font-size: 32px; }
         #gameover-overlay { color: #ff5555; font-size: 24px; }
         
-        /* 観客用オーバーレイ */
         #spectator-overlay {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background-color: transparent; z-index: 5;
@@ -136,8 +135,10 @@
             <div style="color: #00ffcc; font-size: 18px; font-weight: bold; margin-bottom: 15px;">【居酒屋テトリス 待機室】</div>
             
             <div id="name-entry" style="display:flex; gap:5px; margin-bottom:15px; width:100%;">
-                <input type="text" id="player-name-input" placeholder="あなたの名前を入力" style="flex:1; padding:8px; border-radius:4px; border:1px solid #777; background:#333; color:white;">
-                <button id="join-btn" class="action-btn" style="width:auto; padding:8px 15px; font-size:14px; background-color:#28a745;" onclick="joinGame()">参加</button>
+                <form id="name-form" style="display:flex; width:100%; gap:5px;" onsubmit="return false;">
+                    <input type="text" id="player-name-input" placeholder="あなたの名前を入力" autocomplete="off" style="flex:1; padding:8px; border-radius:4px; border:1px solid #777; background:#333; color:white;">
+                    <button id="join-btn" class="action-btn" type="button" style="width:auto; padding:8px 15px; font-size:14px; background-color:#28a745;">参加</button>
+                </form>
             </div>
             
             <div id="player-list-container" style="width:100%; background:#333; padding:10px; border-radius:8px; margin-bottom:15px; display:none; box-sizing:border-box;">
@@ -155,7 +156,7 @@
                     <label style="font-size:12px;">居酒屋モードの順番 (上が先):</label>
                     <ul id="order-ul" style="list-style:none; padding:0; margin:0;"></ul>
                 </div>
-                <button id="host-start-btn" class="action-btn" style="background-color:#007bff; width:100%; font-size:14px;" onclick="startGameFromLobby()" disabled>全員準備完了で開始</button>
+                <button id="host-start-btn" class="action-btn" style="background-color:#007bff; width:100%; font-size:14px;" disabled>全員準備完了で開始</button>
             </div>
         </div>
 
@@ -193,7 +194,8 @@
         </div>
 
         <div id="board">
-            <div id="spectator-overlay"></div> <div id="gameover-overlay" class="overlay">
+            <div id="spectator-overlay"></div>
+            <div id="gameover-overlay" class="overlay">
                 <div>GAME OVER!</div>
                 <button id="start-izakaya-btn">居酒屋モード開始</button>
             </div>
@@ -215,7 +217,7 @@
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
-    // --- 初期設定とユーザーID生成 ---
+    // --- 初期設定とユーザーID生成（エラー完全回避版） ---
     const socket = io();
     const urlParams = new URLSearchParams(window.location.search);
     let roomId = urlParams.get('room');
@@ -224,11 +226,16 @@
         window.location.href = `?room=${roomId}`;
     }
 
-    // ブラウザに固有のIDを記憶させる
-    let myClientId = localStorage.getItem('izakaya_client_id');
-    if (!myClientId) {
+    let myClientId;
+    try {
+        myClientId = localStorage.getItem('izakaya_client_id');
+        if (!myClientId) {
+            myClientId = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('izakaya_client_id', myClientId);
+        }
+    } catch (e) {
+        // プライベートブラウズ等でlocalStorageが使えない場合は一時的なIDを付与
         myClientId = 'user_' + Math.random().toString(36).substr(2, 9);
-        localStorage.setItem('izakaya_client_id', myClientId);
     }
 
     const roomUrlText = document.getElementById('room-url');
@@ -241,9 +248,9 @@
     socket.emit('joinRoom', roomId);
 
     // --- 新規状態変数 ---
-    let players = []; // { id, name, isReady }
+    let players = []; 
     let tetrisPlayerId = null;
-    let izakayaOrder = []; // [id1, id2, ...]
+    let izakayaOrder = []; 
     let currentIzakayaTurnIndex = 0;
 
     function broadcastState() {
@@ -251,7 +258,7 @@
             boardData, gameMode, ROWS, currentShape, pieceX, pieceY, stockCount,
             excludedMinos: Array.from(excludedMinos), nextTetrisMinoId, timeLeft,
             gameTime, gameLevel, currentDropSpeed,
-            players, tetrisPlayerId, izakayaOrder, currentIzakayaTurnIndex // 同期データに追加
+            players, tetrisPlayerId, izakayaOrder, currentIzakayaTurnIndex
         });
     }
 
@@ -327,7 +334,7 @@
     const turnIndicator = document.getElementById('turn-indicator');
     const spectatorOverlay = document.getElementById('spectator-overlay');
 
-    let gameMode = 'LOBBY'; // 初期状態をロビーに変更
+    let gameMode = 'LOBBY'; 
     let currentShape = null; let pieceX = 0; let pieceY = 0;
     let dropTimer = null; let countdownTimer = null; let timeLeft = 5;
     let tetrisHistory = []; let droughtCounters = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0}; 
@@ -338,10 +345,12 @@
     // --- ロビー＆プレイヤー管理ロジック ---
 
     function joinGame() {
-        const nameInput = document.getElementById('player-name-input').value.trim();
+        const inputEl = document.getElementById('player-name-input');
+        const nameInput = inputEl.value.trim();
         if (!nameInput) { alert("名前を入力してください！"); return; }
         
-        // 既存プレイヤーなら名前更新、新規なら追加
+        inputEl.blur(); // ★追加：スマホのキーボードを強制的に閉じる！
+        
         let me = players.find(p => p.id === myClientId);
         if (me) { me.name = nameInput; } 
         else { players.push({ id: myClientId, name: nameInput, isReady: false }); }
@@ -353,17 +362,17 @@
         updateUIBasedOnMode();
     }
 
-    function toggleReady() {
+    // グローバル関数として登録（動的生成ボタン用）
+    window.toggleReady = function() {
         let me = players.find(p => p.id === myClientId);
         if (me) {
             me.isReady = !me.isReady;
             broadcastState();
             updateUIBasedOnMode();
         }
-    }
+    };
 
-    // 順番変更（ホスト専用）
-    function moveOrder(index, direction) {
+    window.moveOrder = function(index, direction) {
         const newIndex = index + direction;
         if (newIndex < 0 || newIndex >= izakayaOrder.length) return;
         const temp = izakayaOrder[index];
@@ -371,9 +380,8 @@
         izakayaOrder[newIndex] = temp;
         broadcastState();
         updateUIBasedOnMode();
-    }
+    };
 
-    // ホストのテトリス役選択検知
     document.addEventListener('change', (e) => {
         if (e.target.id === 'tetris-player-select') {
             tetrisPlayerId = e.target.value;
@@ -381,12 +389,10 @@
         }
     });
 
-    // ターン権限チェック関数
     function isMyIzakayaTurn() {
         return gameMode === 'IZAKAYA' && izakayaOrder[currentIzakayaTurnIndex] === myClientId;
     }
 
-    // --- モードごとのUI全切り替え ---
     function updateUIBasedOnMode() {
         const lobbyPanel = document.getElementById('lobby-panel');
         const uiArea = document.getElementById('ui-area');
@@ -400,7 +406,6 @@
             virtualPad.style.display = 'none';
             leftPanel.style.display = 'none';
             
-            // ロビー画面の描画
             const me = players.find(p => p.id === myClientId);
             if (me) {
                 document.getElementById('name-entry').style.display = 'none';
@@ -419,14 +424,13 @@
                 const readyText = p.isReady ? '<span style="color:#00ffcc; font-weight:bold;">準備OK</span>' : '<span style="color:#888;">準備中</span>';
                 let actionBtn = '';
                 if (p.id === myClientId) {
-                    actionBtn = `<button onclick="toggleReady()" style="padding:4px 8px; border-radius:4px; border:none; cursor:pointer; background:${p.isReady ? '#555' : '#007bff'}; color:white;">${p.isReady ? '取消' : '準備完了にする'}</button>`;
+                    actionBtn = `<button onclick="window.toggleReady()" style="padding:4px 8px; border-radius:4px; border:none; cursor:pointer; background:${p.isReady ? '#555' : '#007bff'}; color:white;">${p.isReady ? '取消' : '準備完了にする'}</button>`;
                 }
                 li.innerHTML = `<span style="font-size:14px;">${p.id === players[0].id ? '👑 ' : ''}${p.name}</span> <span>${readyText} ${actionBtn}</span>`;
                 ul.appendChild(li);
                 if (!p.isReady) allReady = false;
             });
 
-            // ホスト（最初の入室者）専用パネル
             const hostPanel = document.getElementById('host-panel');
             const isHost = players.length > 0 && players[0].id === myClientId;
             if (isHost && me) {
@@ -450,8 +454,8 @@
                     li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.background = '#222'; li.style.padding = '6px'; li.style.marginBottom = '2px'; li.style.alignItems='center';
                     li.innerHTML = `<span style="font-size:13px;">${index + 1}. ${p.name}</span> 
                         <div>
-                            <button onclick="moveOrder(${index}, -1)" ${index === 0 ? 'disabled' : ''} style="padding:2px 6px;">▲</button>
-                            <button onclick="moveOrder(${index}, 1)" ${index === izakayaOrder.length - 1 ? 'disabled' : ''} style="padding:2px 6px;">▼</button>
+                            <button onclick="window.moveOrder(${index}, -1)" ${index === 0 ? 'disabled' : ''} style="padding:2px 6px;">▲</button>
+                            <button onclick="window.moveOrder(${index}, 1)" ${index === izakayaOrder.length - 1 ? 'disabled' : ''} style="padding:2px 6px;">▼</button>
                         </div>`;
                     orderUl.appendChild(li);
                 });
@@ -467,12 +471,10 @@
             }
 
         } else {
-            // --- ゲーム中の表示 ---
             lobbyPanel.style.display = 'none';
             uiArea.style.display = 'block';
             boardElement.style.display = 'grid';
 
-            // 誰のターンかインジケーター更新
             if (gameMode === 'TETRIS') {
                 const tPlayer = players.find(p => p.id === tetrisPlayerId);
                 if (tPlayer) {
@@ -522,8 +524,6 @@
     }
 
 
-    // --- ゲーム共通ロジック ---
-
     function updateBoardLayout() {
         const cellSize = ROWS === 28 ? 16 : 22; 
         boardElement.style.gridTemplateColumns = `repeat(10, ${cellSize}px)`;
@@ -547,7 +547,6 @@
         document.getElementById('time-display').innerText = 0;
         document.getElementById('level-display').innerText = 1;
 
-        // プレイヤーの準備状態をリセットし、現在の順序を維持
         players.forEach(p => p.isReady = false);
         currentIzakayaTurnIndex = 0;
 
@@ -695,7 +694,7 @@
         ROWS = 28; 
         for (let i = 0; i < 8; i++) { boardData.unshift(Array(COLS).fill(0)); }
         updateBoardLayout(); 
-        currentIzakayaTurnIndex = 0; // 順番は最初の人から
+        currentIzakayaTurnIndex = 0; 
         initExcludeUI(); drawAvailableMinos(); updateStockUI(); updateUIBasedOnMode(); drawBoard(); broadcastState(); 
     });
 
@@ -725,7 +724,6 @@
         const totalCost = 1 + excludedMinos.size;
         if (gameMode !== 'IZAKAYA') return;
         
-        // ★権限チェック：自分のターンでなければボタンを無効化
         if (!isMyIzakayaTurn()) {
             addStockBtn.disabled = true;
             drawBtn.disabled = true; drawBtn.innerText = `相手のターン`;
@@ -824,7 +822,6 @@
         } 
         else { 
             excludedMinos.clear(); updateExcludeUI_NoSync(); 
-            // ★追加：ロックが完了したら、次の人のターンへ回す
             currentIzakayaTurnIndex = (currentIzakayaTurnIndex + 1) % izakayaOrder.length;
         }
         
@@ -894,10 +891,7 @@
         }
     }
 
-    // --- バーチャルパッド操作ロジック ---
-
     function movePiece(direction) {
-        // ★権限チェック：担当者でなければ無視
         if (gameMode === 'TETRIS' && tetrisPlayerId !== myClientId) return;
         if (gameMode === 'IZAKAYA' && !isMyIzakayaTurn()) return;
         if (!currentShape) return;
@@ -946,16 +940,23 @@
         else if (gameMode === 'IZAKAYA') lockPieceIzakaya();
     }
 
+    // ★追加・変更：ボタンのイベントを確実にするカスタム関数
     function addInstantClick(id, action) {
         const btn = document.getElementById(id);
+        if (!btn) return;
         btn.addEventListener('touchstart', (e) => {
+            if (btn.disabled) return;
             e.preventDefault(); action();
         }, { passive: false });
-        btn.addEventListener('mousedown', (e) => {
-            if (e.button === 0) { e.preventDefault(); action(); }
+        btn.addEventListener('click', (e) => {
+            if (btn.disabled) return;
+            e.preventDefault(); action();
         });
     }
 
+    addInstantClick('join-btn', joinGame);
+    addInstantClick('host-start-btn', startGameFromLobby);
+    
     addInstantClick('btn-left', () => movePiece(-1));
     addInstantClick('btn-right', () => movePiece(1));
     addInstantClick('btn-rotate', rotateShape);
