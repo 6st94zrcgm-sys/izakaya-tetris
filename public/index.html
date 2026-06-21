@@ -733,10 +733,24 @@
         else if (gameMode === 'IZAKAYA') lockPieceIzakaya();
     }
 
-    document.getElementById('btn-left').addEventListener('click', () => movePiece(-1));
-    document.getElementById('btn-right').addEventListener('click', () => movePiece(1));
-    document.getElementById('btn-rotate').addEventListener('click', rotateShape);
-    document.getElementById('btn-drop').addEventListener('click', hardDrop);
+// ★追加・変更：「click」ではなく「touchstart（触れた瞬間）」で即座に動かす
+    function addInstantClick(id, action) {
+        const btn = document.getElementById(id);
+        // スマホ用（触れた瞬間に発動）
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // ダブルタップズームなどのブラウザの標準動作をブロック
+            action();
+        }, { passive: false });
+        // PC用（マウスをクリックした瞬間に発動）
+        btn.addEventListener('mousedown', (e) => {
+            if (e.button === 0) { e.preventDefault(); action(); }
+        });
+    }
+
+    addInstantClick('btn-left', () => movePiece(-1));
+    addInstantClick('btn-right', () => movePiece(1));
+    addInstantClick('btn-rotate', rotateShape);
+    addInstantClick('btn-drop', hardDrop);
 
     updateBoardLayout(); 
     initExcludeUI();
