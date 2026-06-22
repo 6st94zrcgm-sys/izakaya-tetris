@@ -59,15 +59,28 @@
 
         function broadcast() {
             socket.emit('updateState', { players, votes, gameMode });
+            renderLobby(); // ★修正：通信と同時に「自分の画面」も即座に書き換える
         }
+
+        // ★修正：待機時間を1.5秒(1500ms)に延長して「お互いホスト問題」を防止
+        let initTimeout = setTimeout(() => {
+            if (!receivedSync) {
+                players = [{ id: myClientId, name: myName, isReady: false }];
+                gameMode = 'LOBBY';
+                broadcast();
+            }
+        }, 1500); 
 
         socket.on('syncState', (state) => {
             receivedSync = true;
+            clearTimeout(initTimeout); // ★修正：サーバーから返事が来たらタイマーを確実に取り消す
 
             if (!state || Object.keys(state).length === 0) {
-                players = [{ id: myClientId, name: myName, isReady: false }];
+                let me = players.find(p => p.id === myClientId);
+                if (!me) {
+                    players.push({ id: myClientId, name: myName, isReady: false });
+                }
                 broadcast();
-                renderLobby(); 
                 return;
             }
 
@@ -92,18 +105,12 @@
             renderLobby();
         });
 
-        setTimeout(() => {
-            if (!receivedSync) {
-                players = [{ id: myClientId, name: myName, isReady: false }];
-                gameMode = 'LOBBY';
-                broadcast();
-                renderLobby();
-            }
-        }, 300);
-
         function toggleReady() {
             const me = players.find(p => p.id === myClientId);
-            if (me) { me.isReady = !me.isReady; broadcast(); }
+            if (me) { 
+                me.isReady = !me.isReady; 
+                broadcast(); // broadcast内で自分の画面も更新される
+            }
         }
 
         function castVote(targetId) {
@@ -149,7 +156,6 @@
                     const li = document.createElement('li');
                     li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom = '10px'; li.style.alignItems = 'center';
                     
-                    // ★変更部分：自分が準備完了した時のUIを劇的に分かりやすくしました
                     let statusHtml = '';
                     if (p.id === myClientId) {
                         if (p.isReady) {
@@ -163,7 +169,6 @@
                             statusHtml = `<button onclick="toggleReady()" style="background:#007bff; color:white; border:none; padding:6px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">準備完了にする</button>`;
                         }
                     } else {
-                        // 他の人の状態表示
                         statusHtml = `<span style="color:${p.isReady ? '#00ffcc' : '#888'}; font-weight:bold;">${p.isReady ? '✅ 準備OK' : '⏳ 準備中...'}</span>`;
                     }
 
@@ -181,6 +186,8 @@
                     } else {
                         startBtn.disabled = true; startBtn.innerText = '全員の準備を待つ...';
                     }
+                } else {
+                    document.getElementById('host-controls').style.display = 'none';
                 }
             } else if (gameMode === 'VOTING') {
                 document.getElementById('lobby-view').style.display = 'none';
