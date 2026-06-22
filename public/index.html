@@ -154,7 +154,7 @@
             <div style="color: #00ffcc; font-size: 18px; font-weight: bold; margin-bottom: 15px;">【待機ロビー】</div>
             
             <div id="name-entry" style="display:flex; gap:5px; margin-bottom:15px; width:100%;">
-                <form id="name-form" style="display:flex; width:100%; gap:5px;" onsubmit="joinGame(); return false;">
+                <form id="name-form" style="display:flex; width:100%; gap:5px;">
                     <input type="text" id="player-name-input" placeholder="あなたの名前" autocomplete="off" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #777; background:#333; color:white;">
                     <button id="join-btn" class="action-btn" type="submit" style="width:auto; padding:8px 15px; font-size:14px; background-color:#28a745;">参加</button>
                 </form>
@@ -371,11 +371,10 @@
 
     // --- ロビー＆プレイヤー管理 ---
 
-    // ★修正：標準の関数呼び出しで確実に入室できるように変更
     window.joinGame = function() {
         const inputEl = document.getElementById('player-name-input');
         const nameInput = inputEl.value.trim();
-        if (!nameInput) { alert("名前を入力してください！"); return; }
+        if (!nameInput) return; // name form required is already handling empty check
         
         inputEl.blur(); 
         
@@ -386,6 +385,12 @@
         broadcastState();
         updateUIBasedOnMode();
     }
+
+    // ★追加：フォームのデフォルト送信（URL変更と画面リロード）を完全に防ぐ魔法の記述
+    document.getElementById('name-form').addEventListener('submit', (e) => {
+        e.preventDefault(); // 勝手に画面が切り替わるのを防ぐ
+        window.joinGame();
+    });
 
     window.toggleReady = function() {
         let me = players.find(p => p.id === myClientId);
@@ -1003,14 +1008,11 @@
             if (btn.disabled) return;
             e.preventDefault(); action();
         }, { passive: false });
-        btn.addEventListener('click', (e) => {
-            if (btn.disabled) return;
-            e.preventDefault(); action();
+        btn.addEventListener('mousedown', (e) => {
+            if (e.button === 0) { e.preventDefault(); action(); }
         });
     }
 
-    // ★削除：addInstantClick('join-btn', joinGame); は不要になったので消去
-    
     addInstantClick('btn-left', () => movePiece(-1));
     addInstantClick('btn-right', () => movePiece(1));
     addInstantClick('btn-rotate', rotateShape);
