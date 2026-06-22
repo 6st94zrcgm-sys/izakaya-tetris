@@ -7,9 +7,9 @@
     <style>
         body { background-color: #222; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; }
         .panel { background: #333; padding: 15px; border-radius: 8px; width: 100%; max-width: 340px; box-sizing: border-box; margin-bottom: 10px; }
-        .action-btn { padding: 8px 12px; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+        .action-btn { padding: 8px 12px; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; touch-action: manipulation; }
         .action-btn:disabled { background-color: #555; color: #888; cursor: not-allowed; }
-        .vote-btn { background: #444; color: white; border: 2px solid #555; padding: 10px; width: 100%; margin-bottom: 5px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .vote-btn { background: #444; color: white; border: 2px solid #555; padding: 10px; width: 100%; margin-bottom: 5px; border-radius: 5px; cursor: pointer; font-weight: bold; touch-action: manipulation; }
         .vote-btn.selected { background: #ff5555; border-color: #fff; }
     </style>
 </head>
@@ -21,7 +21,7 @@
 
     <div id="lobby-view" class="panel">
         <h2 style="color: #00ffcc; text-align: center; margin-top: 0;">待機ロビー</h2>
-        <button onclick="window.location.href='/index.html?room=' + roomId" style="background:#555; color:white; border:none; padding:5px; border-radius:3px; font-size:12px; margin-bottom:10px; width:100%;">✏️ 名前を変更する</button>
+        <button onclick="window.location.href='/index.html?room=' + roomId" style="background:#555; color:white; border:none; padding:8px; border-radius:3px; font-size:12px; margin-bottom:10px; width:100%; cursor: pointer;">✏️ 名前を変更する</button>
         
         <ul id="player-list" style="list-style: none; padding: 0;"></ul>
 
@@ -46,7 +46,7 @@
         const myClientId = localStorage.getItem('izakaya_client_id');
         const myName = localStorage.getItem('izakaya_player_name');
 
-        // URLがおかしい、または名前がない場合はやり直し
+        // URLがおかしい、または名前がない場合は入力画面へ戻す
         if (!roomId || !myClientId || !myName) window.location.href = '/index.html';
 
         document.getElementById('room-url').innerText = window.location.href;
@@ -55,16 +55,20 @@
         let players = [];
         let votes = {};
         let gameMode = 'LOBBY';
+        let receivedSync = false; // ★追加：サーバーから返事が来たかどうかのフラグ
 
         function broadcast() {
             socket.emit('updateState', { players, votes, gameMode });
         }
 
         socket.on('syncState', (state) => {
+            receivedSync = true; // 返事が来た！
+
             if (!state || Object.keys(state).length === 0) {
-                // 初回アクセス時、自分を登録
+                // まだ部屋に何もない場合（自分が1人目）
                 players = [{ id: myClientId, name: myName, isReady: false }];
                 broadcast();
+                renderLobby(); // ★追加：ここで画面を描画する
                 return;
             }
 
@@ -78,14 +82,28 @@
                 return;
             }
 
-            // 新しく来た人なら自分を追加
-            if (!players.find(p => p.id === myClientId)) {
+            // 新しく来た人なら自分を追加、既にいるなら名前を最新に更新
+            let me = players.find(p => p.id === myClientId);
+            if (!me) {
                 players.push({ id: myClientId, name: myName, isReady: false });
+                broadcast();
+            } else if (me.name !== myName) {
+                me.name = myName; // 名前変更して戻ってきた場合の処理
                 broadcast();
             }
 
             renderLobby();
         });
+
+        // ★追加：1人目問題の救済処置（0.3秒待って返事がなければ強行突破）
+        setTimeout(() => {
+            if (!receivedSync) {
+                players = [{ id: myClientId, name: myName, isReady: false }];
+                gameMode = 'LOBBY';
+                broadcast();
+                renderLobby();
+            }
+        }, 300);
 
         function toggleReady() {
             const me = players.find(p => p.id === myClientId);
@@ -108,13 +126,13 @@
                     if (counts[id] > max) { max = counts[id]; winners = [id]; }
                     else if (counts[id] === max) winners.push(id);
                 }
-                const tetrisPlayerId = winners.sort()[0]; // 同票ならID順
+                const tetrisPlayerId = winners.sort()[0]; // 同票ならID順で確定
 
                 // ゲーム開始フラグを立てて、ゲーム画面の設定を送信
                 socket.emit('updateState', { 
                     players, 
                     tetrisPlayerId, 
-                    gameMode: 'TETRIS', // ここでゲーム画面に飛ばす
+                    gameMode: 'TETRIS', 
                     gameTime: 0, gameLevel: 1, currentDropSpeed: 800,
                     stockCount: 0, excludedMinos: []
                 });
@@ -134,10 +152,10 @@
 
                 players.forEach(p => {
                     const li = document.createElement('li');
-                    li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom = '10px';
+                    li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom = '10px'; li.style.alignItems = 'center';
                     const btnHtml = p.id === myClientId 
-                        ? `<button onclick="toggleReady()" style="background:${p.isReady ? '#555' : '#007bff'}; color:white; border:none; padding:4px 8px; border-radius:4px;">${p.isReady ? '取消' : '準備完了'}</button>`
-                        : `<span style="color:${p.isReady ? '#00ffcc' : '#888'}">${p.isReady ? 'OK' : '準備中'}</span>`;
+                        ? `<button onclick="toggleReady()" style="background:${p.isReady ? '#555' : '#007bff'}; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">${p.isReady ? '取消' : '準備完了'}</button>`
+                        : `<span style="color:${p.isReady ? '#00ffcc' : '#888'}; font-weight:bold;">${p.isReady ? 'OK' : '準備中'}</span>`;
                     li.innerHTML = `<span>${p.id === players[0].id ? '👑' : ''} ${p.name}</span> ${btnHtml}`;
                     ul.appendChild(li);
                     if (!p.isReady) allReady = false;
