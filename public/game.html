@@ -209,7 +209,7 @@
         drawBoard();
 
         checkAndResumeTimers();
-        manageIzakayaTimer(); // ★追加：居酒屋モードのカウントダウンをローカルで管理
+        manageIzakayaTimer(); 
     });
 
     function checkAndResumeTimers() {
@@ -242,7 +242,6 @@
         }
     }
 
-    // ★追加：通信を使わずに各自のスマホ内でタイマーをカウントダウンさせる処理（ラグ解消の要！）
     function manageIzakayaTimer() {
         if (gameMode === 'IZAKAYA' && currentShape) {
             if (!countdownTimer) {
@@ -253,7 +252,6 @@
                         countdownTimer = null;
                         document.getElementById('timer-display').innerText = "";
                         
-                        // 「置く人」のスマホだけが最終的な位置を確定させる
                         if (currentPlacerId === myClientId) {
                             pieceY = getLandingY();
                             lockPieceIzakaya();
@@ -271,10 +269,14 @@
         }
     }
 
+    // ★修正：役割を変更した瞬間に、自分の画面も即座に更新する
     window.changeRole = function(roleType, targetId) {
         if (roleType === 'drawer') currentDrawerId = targetId;
         if (roleType === 'placer') currentPlacerId = targetId;
-        broadcastState();
+        
+        updateUIBasedOnMode(); // インジケーターやボタンの表示を即更新
+        updateStockUI();       // 引くボタンの有効/無効を即更新
+        broadcastState();      // 他の人に通信を飛ばす
     };
 
     function updateUIBasedOnMode() {
@@ -286,7 +288,7 @@
         const spectatorOverlay = document.getElementById('spectator-overlay');
         const gameoverOverlay = document.getElementById('gameover-overlay');
         const clearOverlay = document.getElementById('clear-overlay');
-        const btnDrop = document.getElementById('btn-drop'); // ★追加
+        const btnDrop = document.getElementById('btn-drop'); 
 
         const tPlayer = players.find(p => p.id === tetrisPlayerId);
 
@@ -298,7 +300,7 @@
             gameoverOverlay.style.display = 'none';
             tetrisUi.style.display = 'flex'; izakayaUi.style.display = 'none'; leftPanel.style.display = 'none';
             
-            btnDrop.style.display = 'flex'; // ★テトリスモードでは即時落下を表示
+            btnDrop.style.display = 'flex'; 
             virtualPad.style.display = (tetrisPlayerId === myClientId) ? 'flex' : 'none';
             spectatorOverlay.style.display = (tetrisPlayerId === myClientId) ? 'none' : 'block';
 
@@ -335,7 +337,7 @@
             turnIndicator.innerHTML = turnMsg;
             turnIndicator.style.color = (currentPlacerId === myClientId || currentDrawerId === myClientId) ? "#ffcc00" : "#ddd";
             
-            btnDrop.style.display = 'none'; // ★居酒屋モードでは即時落下ボタンを隠す！
+            btnDrop.style.display = 'none'; 
             virtualPad.style.display = (currentPlacerId === myClientId && currentShape) ? 'flex' : 'none';
             spectatorOverlay.style.display = (currentPlacerId === myClientId) ? 'none' : 'block';
         } else if (gameMode === 'CLEARED') {
@@ -556,7 +558,6 @@
 
         if (checkCollision(0, 0)) { alert("これ以上置けません！"); lockPieceIzakaya(); return; }
         
-        // ★修正：タイマー開始時の通信ラグを防止
         timeLeft = 5; document.getElementById('timer-display').innerText = `${timeLeft}秒`;
         updateUIBasedOnMode(); drawBoard(); broadcastState(); 
         manageIzakayaTimer();
