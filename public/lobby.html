@@ -34,11 +34,8 @@
     <div id="voting-view" class="panel" style="display: none;">
         <h2 style="color: #ff5555; text-align: center; margin-top: 0;">犠牲者投票</h2>
         <p style="font-size: 12px; text-align: center;">テトリスをプレイする人を1人選んでください</p>
-        
         <div id="vote-buttons"></div>
-        
         <button id="confirm-vote-btn" class="action-btn" style="background-color: #28a745; margin-top: 15px; font-size: 15px;" disabled onclick="confirmVote()">🔒 投票を確定する</button>
-        
         <div id="vote-status" style="text-align: center; margin-top: 15px; color: #00ffcc; font-weight: bold;"></div>
     </div>
 
@@ -58,11 +55,10 @@
         let players = [];
         let votes = {};
         let gameMode = 'LOBBY';
-        let votedCompletes = []; // ★追加：投票完了ボタンを押したプレイヤーのIDリスト
+        let votedCompletes = []; 
         let receivedSync = false;
 
         function broadcast() {
-            // ★変更：votedCompletes も一緒に全員に同期する
             socket.emit('updateState', { players, votes, gameMode, votedCompletes });
             renderLobby(); 
         }
@@ -90,7 +86,7 @@
             players = state.players || [];
             votes = state.votes || {};
             gameMode = state.gameMode || 'LOBBY';
-            votedCompletes = state.votedCompletes || []; // ★追加：投票完了リストの同期
+            votedCompletes = state.votedCompletes || [];
 
             if (gameMode === 'TETRIS' || gameMode === 'IZAKAYA') {
                 window.location.href = `/game.html?room=${roomId}`;
@@ -107,6 +103,9 @@
             }
 
             renderLobby();
+            
+            // ★修正：誰かが状態を更新するたびにホストが完了チェックを行う
+            checkVotingComplete();
         });
 
         function toggleReady() {
@@ -114,30 +113,25 @@
             if (me) {  me.isReady = !me.isReady; broadcast(); }
         }
 
-        // 誰かを選んだ（仮選択）の処理
-        function castVote(targetId) {
-            // 既に自分が投票完了ボタンを押している場合は、選択変更不可
+        window.castVote = function(targetId) {
             if (votedCompletes.includes(myClientId)) return;
-
             votes[myClientId] = targetId;
             broadcast();
         }
 
-        // ★追加：投票完了（確定）ボタンを押したときの処理
         window.confirmVote = function() {
-            if (!votes[myClientId]) return; // 誰にも投票してなければ無視
-            if (votedCompletes.includes(myClientId)) return; // 既に押してれば無視
+            if (!votes[myClientId]) return; 
+            if (votedCompletes.includes(myClientId)) return; 
 
-            votedCompletes.push(myClientId); // 完了リストに自分を追加
+            votedCompletes.push(myClientId); 
             broadcast();
-            checkVotingComplete();
+            checkVotingComplete(); 
         };
 
-        // 全員が「投票完了」ボタンを押したかチェックする処理
         function checkVotingComplete() {
             const isHost = players.length > 0 && players[0].id === myClientId;
             
-            // ★修正：単にvotesの数ではなく、確定ボタンを押した数(votedCompletes)が全員分あるかで判定
+            // ホストの画面で全員の確定を確認した場合
             if (isHost && votedCompletes.length === players.length && gameMode === 'VOTING') {
                 let counts = {};
                 for (let v in votes) counts[votes[v]] = (counts[votes[v]] || 0) + 1;
@@ -148,6 +142,8 @@
                 }
                 const tetrisPlayerId = winners.sort()[0];
 
+                gameMode = 'TETRIS'; // 先にローカルのモードを変更
+
                 socket.emit('updateState', { 
                     players, 
                     tetrisPlayerId, 
@@ -155,6 +151,9 @@
                     gameTime: 0, gameLevel: 1, currentDropSpeed: 800,
                     stockCount: 0, excludedMinos: []
                 });
+
+                // ★修正：ホスト自身も強制的にゲーム画面へワープさせる
+                window.location.href = `/game.html?room=${roomId}`;
             }
         }
 
@@ -176,12 +175,7 @@
                     let statusHtml = '';
                     if (p.id === myClientId) {
                         if (p.isReady) {
-                            statusHtml = `
-                                <div style="display:flex; align-items:center; gap:10px;">
-                                    <span style="color:#00ffcc; font-weight:bold;">✅ 準備OK!</span>
-                                    <button onclick="toggleReady()" style="background:#555; color:white; border:none; padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">取消</button>
-                                </div>
-                            `;
+                            statusHtml = `<div style="display:flex; align-items:center; gap:10px;"><span style="color:#00ffcc; font-weight:bold;">✅ 準備OK!</span><button onclick="toggleReady()" style="background:#555; color:white; border:none; padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">取消</button></div>`;
                         } else {
                             statusHtml = `<button onclick="toggleReady()" style="background:#007bff; color:white; border:none; padding:6px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">準備完了にする</button>`;
                         }
@@ -211,45 +205,30 @@
                 document.getElementById('voting-view').style.display = 'block';
 
                 const myConfirmed = votedCompletes.includes(myClientId);
-
-                // 投票ボタン（候補者リスト）の描画
                 const btnContainer = document.getElementById('vote-buttons');
                 btnContainer.innerHTML = '';
                 players.forEach(p => {
                     const btn = document.createElement('button');
                     btn.className = `vote-btn ${votes[myClientId] === p.id ? 'selected' : ''}`;
                     btn.innerText = p.name;
-                    
-                    // 自分がすでに確定ボタンを押した後は、候補者ボタンを押せなくする
                     if (myConfirmed) {
-                        btn.disabled = true;
-                        btn.style.cursor = 'not-allowed';
+                        btn.disabled = true; btn.style.cursor = 'not-allowed';
                     } else {
                         btn.onclick = () => castVote(p.id);
                     }
                     btnContainer.appendChild(btn);
                 });
 
-                // ★確定ボタンの状態制御
                 const confirmBtn = document.getElementById('confirm-vote-btn');
                 if (myConfirmed) {
-                    confirmBtn.disabled = true;
-                    confirmBtn.innerText = '✅ 投票を確定しました';
-                    confirmBtn.style.backgroundColor = '#555';
+                    confirmBtn.disabled = true; confirmBtn.innerText = '✅ 投票を確定しました'; confirmBtn.style.backgroundColor = '#555';
                 } else {
-                    // 誰かを選んでいれば確定ボタンを押せるようにする
                     if (votes[myClientId]) {
-                        confirmBtn.disabled = false;
-                        confirmBtn.innerText = '🔒 投票を確定する';
-                        confirmBtn.style.backgroundColor = '#28a745';
+                        confirmBtn.disabled = false; confirmBtn.innerText = '🔒 投票を確定する'; confirmBtn.style.backgroundColor = '#28a745';
                     } else {
-                        confirmBtn.disabled = true;
-                        confirmBtn.innerText = '👇 誰かを選択してください';
-                        confirmBtn.style.backgroundColor = '#555';
+                        confirmBtn.disabled = true; confirmBtn.innerText = '👇 誰かを選択してください'; confirmBtn.style.backgroundColor = '#555';
                     }
                 }
-
-                // 下部ステータスのテキストを「投票完了数」に変更
                 document.getElementById('vote-status').innerText = `投票完了: ${votedCompletes.length} / ${players.length} 人`;
             }
         }
