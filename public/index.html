@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>居酒屋テトリス - 投票＆役割分担パーティー版</title>
+    <title>居酒屋テトリス - 画面切り替えロビー版</title>
     <style>
         body {
             display: flex; justify-content: center; align-items: flex-start;
@@ -150,24 +150,31 @@
             <button id="reset-game-btn">🔄 全員リセット(ロビーへ)</button>
         </div>
 
-        <div id="lobby-panel" style="display:flex; flex-direction:column; align-items:center; width:100%;">
+        <div id="name-input-screen" style="display:none; flex-direction:column; align-items:center; width:100%; background:#333; padding:20px; border-radius:8px; box-sizing:border-box;">
+            <div style="color: #00ffcc; font-size: 20px; font-weight: bold; margin-bottom: 20px;">【居酒屋テトリス】</div>
+            <form id="name-form" style="display:flex; flex-direction:column; width:100%; gap:15px;">
+                <input type="text" id="player-name-input" placeholder="あなたの名前を入力" autocomplete="off" required style="padding:12px; border-radius:6px; border:1px solid #777; background:#222; color:white; font-size:16px; text-align:center;">
+                <button type="submit" class="action-btn" style="padding:12px; font-size:16px; background-color:#28a745;">部屋に参加する</button>
+            </form>
+        </div>
+
+        <div id="lobby-wait-screen" style="display:none; flex-direction:column; align-items:center; width:100%;">
             <div style="color: #00ffcc; font-size: 18px; font-weight: bold; margin-bottom: 15px;">【待機ロビー】</div>
             
-            <div id="name-entry" style="display:flex; gap:5px; margin-bottom:15px; width:100%;">
-                <form id="name-form" style="display:flex; width:100%; gap:5px;">
-                    <input type="text" id="player-name-input" placeholder="あなたの名前" autocomplete="off" required style="flex:1; padding:8px; border-radius:4px; border:1px solid #777; background:#333; color:white;">
-                    <button id="join-btn" class="action-btn" type="submit" style="width:auto; padding:8px 15px; font-size:14px; background-color:#28a745;">参加</button>
-                </form>
-            </div>
-            
-            <div id="player-list-container" style="width:100%; background:#333; padding:10px; border-radius:8px; margin-bottom:15px; display:none; box-sizing:border-box;">
+            <button onclick="window.startNameEdit()" class="action-btn" style="background-color:#555; padding: 6px 12px; font-size: 12px; margin-bottom: 15px; width: 100%;">✏️ 名前を変更する</button>
+
+            <div id="player-list-container" style="width:100%; background:#333; padding:10px; border-radius:8px; margin-bottom:15px; box-sizing:border-box;">
                 <h3 style="margin-top:0; font-size:14px; text-align:center; color:#ddd;">参加者一覧</h3>
                 <ul id="player-ul" style="list-style:none; padding:0; margin:0;"></ul>
             </div>
             
-            <div id="host-panel" style="width:100%; background:#444; padding:10px; border-radius:8px; margin-bottom:15px; display:none; box-sizing:border-box;">
+            <div id="host-panel" style="width:100%; background:#444; padding:10px; border-radius:8px; margin-bottom:15px; box-sizing:border-box; display:none;">
                 <h3 style="margin-top:0; font-size:14px; color:#ffcc00; text-align:center;">👑 ホストメニュー</h3>
                 <button id="host-start-btn" class="action-btn" style="background-color:#007bff; width:100%; font-size:14px;" disabled>全員の準備完了を待つ...</button>
+            </div>
+
+            <div id="guest-panel" style="width:100%; background:#444; padding:10px; border-radius:8px; margin-bottom:15px; box-sizing:border-box; display:none;">
+                <button class="action-btn" style="background-color:#555; width:100%; font-size:14px;" disabled>ホストの開始操作を待っています...</button>
             </div>
         </div>
 
@@ -281,6 +288,7 @@
     let tetrisPlayerId = null;
     let currentDrawerId = null; 
     let currentPlacerId = null; 
+    let isEditingName = false; // ★追加：名前入力画面を強制表示するためのフラグ
 
     function broadcastState() {
         socket.emit('updateState', {
@@ -357,7 +365,10 @@
     const virtualPad = document.getElementById('virtual-pad');
     const turnIndicator = document.getElementById('turn-indicator');
     const spectatorOverlay = document.getElementById('spectator-overlay');
-    const lobbyPanel = document.getElementById('lobby-panel');
+    
+    // 画面切り替え用のパネル要素
+    const nameInputScreen = document.getElementById('name-input-screen');
+    const lobbyWaitScreen = document.getElementById('lobby-wait-screen');
     const votingPanel = document.getElementById('voting-panel');
     const uiArea = document.getElementById('ui-area');
 
@@ -371,12 +382,19 @@
 
     // --- ロビー＆プレイヤー管理 ---
 
+    // フォーム送信時（ボタンタップ または エンターキー）の処理
+    document.getElementById('name-form').addEventListener('submit', (e) => {
+        e.preventDefault(); // ★必須：リロードとURL変更をストップ
+        window.joinGame();
+    });
+
     window.joinGame = function() {
         const inputEl = document.getElementById('player-name-input');
         const nameInput = inputEl.value.trim();
-        if (!nameInput) return; // name form required is already handling empty check
+        if (!nameInput) return;
         
-        inputEl.blur(); 
+        inputEl.blur(); // キーボードを閉じる
+        isEditingName = false; // 編集モード終了
         
         let me = players.find(p => p.id === myClientId);
         if (me) { me.name = nameInput; } 
@@ -386,11 +404,11 @@
         updateUIBasedOnMode();
     }
 
-    // ★追加：フォームのデフォルト送信（URL変更と画面リロード）を完全に防ぐ魔法の記述
-    document.getElementById('name-form').addEventListener('submit', (e) => {
-        e.preventDefault(); // 勝手に画面が切り替わるのを防ぐ
-        window.joinGame();
-    });
+    // 名前変更ボタンを押した時の処理
+    window.startNameEdit = function() {
+        isEditingName = true;
+        updateUIBasedOnMode();
+    }
 
     window.toggleReady = function() {
         let me = players.find(p => p.id === myClientId);
@@ -444,57 +462,71 @@
         updateUIBasedOnMode();
     };
 
+    // --- UIの切り替え制御 ---
     function updateUIBasedOnMode() {
+        const me = players.find(p => p.id === myClientId);
+
         if (gameMode === 'LOBBY') {
-            lobbyPanel.style.display = 'flex';
             votingPanel.style.display = 'none';
             uiArea.style.display = 'none';
             boardElement.style.display = 'none';
             virtualPad.style.display = 'none';
             leftPanel.style.display = 'none';
             
-            const me = players.find(p => p.id === myClientId);
-            if (me) {
-                document.getElementById('name-entry').style.display = 'none';
-                document.getElementById('player-list-container').style.display = 'block';
-            } else {
-                document.getElementById('name-entry').style.display = 'flex';
-                document.getElementById('player-list-container').style.display = 'none';
-            }
-
-            const ul = document.getElementById('player-ul');
-            ul.innerHTML = '';
-            let allReady = players.length > 0;
-            players.forEach(p => {
-                const li = document.createElement('li');
-                li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom='8px'; li.style.alignItems = 'center';
-                const readyText = p.isReady ? '<span style="color:#00ffcc; font-weight:bold;">準備OK</span>' : '<span style="color:#888;">準備中</span>';
-                let actionBtn = '';
-                if (p.id === myClientId) {
-                    actionBtn = `<button onclick="window.toggleReady()" style="padding:4px 8px; border-radius:4px; border:none; cursor:pointer; background:${p.isReady ? '#555' : '#007bff'}; color:white;">${p.isReady ? '取消' : '準備完了にする'}</button>`;
+            // まだ参加していない、または名前変更ボタンを押した場合は「入力画面」を表示
+            if (!me || isEditingName) {
+                nameInputScreen.style.display = 'flex';
+                lobbyWaitScreen.style.display = 'none';
+                
+                if (me) {
+                    document.getElementById('player-name-input').value = me.name;
                 }
-                li.innerHTML = `<span style="font-size:14px;">${p.id === players[0].id ? '👑 ' : ''}${p.name}</span> <span>${readyText} ${actionBtn}</span>`;
-                ul.appendChild(li);
-                if (!p.isReady) allReady = false;
-            });
+            } 
+            // 参加済みの場合は「ロビー待機画面」を表示
+            else {
+                nameInputScreen.style.display = 'none';
+                lobbyWaitScreen.style.display = 'flex';
 
-            const hostPanel = document.getElementById('host-panel');
-            const isHost = players.length > 0 && players[0].id === myClientId;
-            if (isHost && me) {
-                hostPanel.style.display = 'block';
-                const startBtn = document.getElementById('host-start-btn');
-                if (allReady) {
-                    startBtn.disabled = false; startBtn.innerText = "▶ 投票へ進む";
-                    startBtn.onclick = window.proceedToVoting;
+                const ul = document.getElementById('player-ul');
+                ul.innerHTML = '';
+                let allReady = players.length > 0;
+                
+                players.forEach(p => {
+                    const li = document.createElement('li');
+                    li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom='8px'; li.style.alignItems = 'center';
+                    const readyText = p.isReady ? '<span style="color:#00ffcc; font-weight:bold;">準備OK</span>' : '<span style="color:#888;">準備中</span>';
+                    let actionBtn = '';
+                    if (p.id === myClientId) {
+                        actionBtn = `<button onclick="window.toggleReady()" style="padding:4px 8px; border-radius:4px; border:none; cursor:pointer; background:${p.isReady ? '#555' : '#007bff'}; color:white;">${p.isReady ? '取消' : '準備完了にする'}</button>`;
+                    }
+                    li.innerHTML = `<span style="font-size:14px;">${p.id === players[0].id ? '👑 ' : ''}${p.name}</span> <span>${readyText} ${actionBtn}</span>`;
+                    ul.appendChild(li);
+                    if (!p.isReady) allReady = false;
+                });
+
+                const hostPanel = document.getElementById('host-panel');
+                const guestPanel = document.getElementById('guest-panel');
+                const isHost = players.length > 0 && players[0].id === myClientId;
+                
+                if (isHost) {
+                    hostPanel.style.display = 'block';
+                    guestPanel.style.display = 'none';
+                    const startBtn = document.getElementById('host-start-btn');
+                    if (allReady) {
+                        startBtn.disabled = false; startBtn.innerText = "▶ 投票へ進む";
+                        startBtn.onclick = window.proceedToVoting;
+                    } else {
+                        startBtn.disabled = true; startBtn.innerText = "全員の準備完了を待つ...";
+                    }
                 } else {
-                    startBtn.disabled = true; startBtn.innerText = "全員の準備完了を待つ...";
+                    hostPanel.style.display = 'none';
+                    guestPanel.style.display = 'block';
                 }
-            } else {
-                hostPanel.style.display = 'none';
             }
 
         } else if (gameMode === 'VOTING') {
-            lobbyPanel.style.display = 'none';
+            nameInputScreen.style.display = 'none';
+            lobbyWaitScreen.style.display = 'none';
             votingPanel.style.display = 'flex';
             uiArea.style.display = 'none';
             boardElement.style.display = 'none';
@@ -515,7 +547,8 @@
 
         } else {
             // --- ゲーム中（テトリス / 居酒屋） ---
-            lobbyPanel.style.display = 'none';
+            nameInputScreen.style.display = 'none';
+            lobbyWaitScreen.style.display = 'none';
             votingPanel.style.display = 'none';
             uiArea.style.display = 'block';
             boardElement.style.display = 'grid';
