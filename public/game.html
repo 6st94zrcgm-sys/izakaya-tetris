@@ -122,7 +122,6 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-    // --- 初期設定とユーザーID生成 ---
     const socket = io();
     const urlParams = new URLSearchParams(window.location.search);
     const roomId = urlParams.get('room');
@@ -132,7 +131,6 @@
     if (!roomId || !myClientId) window.location.href = '/index.html';
     socket.emit('joinRoom', roomId);
 
-    // --- 状態変数 ---
     let players = []; 
     let tetrisPlayerId = null;
     let currentDrawerId = null; 
@@ -167,10 +165,10 @@
         });
     }
 
+    // ★修正：サーバーから最新データが届いた瞬間に、必要ならゲームを動かす
     socket.on('syncState', (state) => {
         if (!state) return;
         
-        // ロビーに戻されたらワープ
         if (state.gameMode === 'LOBBY') {
             window.location.href = `/lobby.html?room=${roomId}`;
             return;
@@ -208,7 +206,41 @@
         updateExcludeUI_NoSync(); 
         drawNextTetrisMinoUI(); 
         drawBoard();
+
+        // ★追加：ここで「自分が担当」かつ「まだタイマーが動いていない」なら起動する！
+        checkAndResumeTimers();
     });
+
+    // ★追加：タイマー起動用関数
+    function checkAndResumeTimers() {
+        if (gameMode === 'TETRIS' && tetrisPlayerId === myClientId) {
+            if (!dropTimer) {
+                if (!currentShape) {
+                    spawnTetrisPiece();
+                } else {
+                    dropTimer = setInterval(moveDownTetris, currentDropSpeed);
+                }
+            }
+            if (!timeInterval) {
+                timeInterval = setInterval(() => {
+                    if (gameMode !== 'TETRIS') { clearInterval(timeInterval); timeInterval = null; return; }
+                    gameTime++;
+                    document.getElementById('time-display').innerText = gameTime;
+
+                    if (gameTime % 20 === 0 && gameLevel < 4) {
+                        gameLevel++;
+                        document.getElementById('level-display').innerText = gameLevel === 4 ? "4(MAX)" : gameLevel;
+                        currentDropSpeed = currentDropSpeed / 1.5;
+                        if (dropTimer) {
+                            clearInterval(dropTimer);
+                            dropTimer = setInterval(moveDownTetris, currentDropSpeed);
+                        }
+                    }
+                    broadcastState(); 
+                }, 1000);
+            }
+        }
+    }
 
     window.changeRole = function(roleType, targetId) {
         if (roleType === 'drawer') currentDrawerId = targetId;
@@ -288,30 +320,8 @@
         return cellSize;
     }
 
-    // ホストがゲームを開始した時に1回だけ呼ばれるロジック（投票画面から来た時）
-    // 最初の1回だけ、tetrisPlayerId に選ばれた人がタイマーを回す
-    setTimeout(() => {
-        if (gameMode === 'TETRIS' && tetrisPlayerId === myClientId && gameTime === 0) {
-            spawnTetrisPiece();
-            timeInterval = setInterval(() => {
-                if (gameMode !== 'TETRIS') { clearInterval(timeInterval); return; }
-                gameTime++;
-                if (gameTime % 20 === 0 && gameLevel < 4) {
-                    gameLevel++;
-                    currentDropSpeed = currentDropSpeed / 1.5;
-                    if (dropTimer) {
-                        clearInterval(dropTimer);
-                        dropTimer = setInterval(moveDownTetris, currentDropSpeed);
-                    }
-                }
-                broadcastState(); 
-            }, 1000);
-        }
-    }, 1000);
-
     function forceRestart() {
         if (!confirm("ロビーへ戻りますか？")) return;
-        // LOBBYモードにして通知（全員がlobby.htmlに飛ばされる）
         socket.emit('updateState', { gameMode: 'LOBBY' });
     }
 
