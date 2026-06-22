@@ -129,16 +129,21 @@
     const myName = localStorage.getItem('izakaya_player_name');
 
     if (!roomId || !myClientId) window.location.href = '/index.html';
-    
-    // ★修正3：画面の初期化を通信前に行う（フリーズ防止）
+
+    // ★重要★ ここで使われるすべての「定数・変数」を一番最初に定義してエラーを完全ブロックします！
+    const MINOS = {
+        1: { name: 'I', color: '#00FFFF', shape: [[1, 1, 1, 1]] },
+        2: { name: 'J', color: '#0000FF', shape: [[2, 0, 0], [2, 2, 2]] },
+        3: { name: 'L', color: '#FFA500', shape: [[0, 0, 3], [3, 3, 3]] },
+        4: { name: 'O', color: '#FFFF00', shape: [[4, 4], [4, 4]] },
+        5: { name: 'S', color: '#00FF00', shape: [[0, 5, 5], [5, 5, 0]] },
+        6: { name: 'T', color: '#800080', shape: [[0, 6, 0], [6, 6, 6]] },
+        7: { name: 'Z', color: '#FF0000', shape: [[7, 7, 0], [0, 7, 7]] },
+    };
+
     let ROWS = 20; const COLS = 10;
     let boardData = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    initExcludeUI();
-    updateBoardLayout();
-    drawBoard();
-
-    socket.emit('joinRoom', roomId);
-
+    
     let players = []; 
     let tetrisPlayerId = null;
     let currentDrawerId = null; 
@@ -152,15 +157,8 @@
     let tetrisHistory = []; let droughtCounters = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0}; 
     let nextTetrisMinoId = null;
 
-    const MINOS = {
-        1: { name: 'I', color: '#00FFFF', shape: [[1, 1, 1, 1]] },
-        2: { name: 'J', color: '#0000FF', shape: [[2, 0, 0], [2, 2, 2]] },
-        3: { name: 'L', color: '#FFA500', shape: [[0, 0, 3], [3, 3, 3]] },
-        4: { name: 'O', color: '#FFFF00', shape: [[4, 4], [4, 4]] },
-        5: { name: 'S', color: '#00FF00', shape: [[0, 5, 5], [5, 5, 0]] },
-        6: { name: 'T', color: '#800080', shape: [[0, 6, 0], [6, 6, 6]] },
-        7: { name: 'Z', color: '#FF0000', shape: [[7, 7, 0], [0, 7, 7]] },
-    };
+    // --- 各種関数定義 ---
+    function getColor(id) { return id === 0 ? '#111' : (MINOS[id] ? MINOS[id].color : '#111'); }
 
     function broadcastState() {
         socket.emit('updateState', {
@@ -170,50 +168,6 @@
             players, tetrisPlayerId, currentDrawerId, currentPlacerId
         });
     }
-
-    socket.on('syncState', (state) => {
-        if (!state) return;
-        
-        if (state.gameMode === 'LOBBY') {
-            window.location.href = `/lobby.html?room=${roomId}`;
-            return;
-        }
-
-        if (state.players) players = state.players;
-        if (state.tetrisPlayerId) tetrisPlayerId = state.tetrisPlayerId;
-        if (state.currentDrawerId) currentDrawerId = state.currentDrawerId;
-        if (state.currentPlacerId) currentPlacerId = state.currentPlacerId;
-
-        if (state.boardData) boardData = state.boardData;
-        if (state.gameMode) gameMode = state.gameMode;
-        if (state.ROWS) { ROWS = state.ROWS; updateBoardLayout(); }
-        currentShape = state.currentShape || null;
-        pieceX = state.pieceX || 0; pieceY = state.pieceY || 0;
-        stockCount = state.stockCount || 0;
-        excludedMinos = new Set(state.excludedMinos || []);
-        nextTetrisMinoId = state.nextTetrisMinoId || null;
-        
-        if (state.gameTime !== undefined) {
-            gameTime = state.gameTime;
-            document.getElementById('time-display').innerText = gameTime;
-        }
-        if (state.gameLevel !== undefined) {
-            gameLevel = state.gameLevel;
-            document.getElementById('level-display').innerText = gameLevel === 4 ? "4(MAX)" : gameLevel;
-        }
-        if (state.currentDropSpeed !== undefined) currentDropSpeed = state.currentDropSpeed;
-        if (state.timeLeft !== undefined) {
-            timeLeft = state.timeLeft;
-            document.getElementById('timer-display').innerText = timeLeft > 0 ? `${timeLeft}秒` : "";
-        }
-
-        updateUIBasedOnMode();
-        updateExcludeUI_NoSync(); 
-        drawNextTetrisMinoUI(); 
-        drawBoard();
-
-        checkAndResumeTimers();
-    });
 
     function checkAndResumeTimers() {
         if (gameMode === 'TETRIS' && tetrisPlayerId === myClientId) {
@@ -476,7 +430,7 @@
 
     function updateExcludeUI_NoSync() {
         const btns = document.getElementById('exclude-btns').children;
-        if (btns.length === 0) return; // ★修正4：フリーズの原因を完全ブロック
+        if (btns.length === 0) return; 
         
         for (let i = 0; i < 7; i++) {
             const id = i + 1;
@@ -663,12 +617,65 @@
         btn.addEventListener('mousedown', (e) => { if (e.button === 0) { e.preventDefault(); action(); } });
     }
 
+    // --- メイン処理開始 ---
+    // 変数の準備がすべて終わってから、最後に初期化関数と通信をスタートします
+    updateBoardLayout();
+    initExcludeUI();
+    drawBoard();
+    updateUIBasedOnMode();
+
     addInstantClick('btn-left', () => movePiece(-1));
     addInstantClick('btn-right', () => movePiece(1));
     addInstantClick('btn-rotate', rotateShape);
     addInstantClick('btn-drop', hardDrop);
 
-    updateUIBasedOnMode(); 
+    // すべての準備が完了してからサーバーへ挨拶
+    socket.emit('joinRoom', roomId);
+
+    // ★ソケット通信の受け取り設定
+    socket.on('syncState', (state) => {
+        if (!state) return;
+        
+        if (state.gameMode === 'LOBBY') {
+            window.location.href = `/lobby.html?room=${roomId}`;
+            return;
+        }
+
+        if (state.players) players = state.players;
+        if (state.tetrisPlayerId) tetrisPlayerId = state.tetrisPlayerId;
+        if (state.currentDrawerId) currentDrawerId = state.currentDrawerId;
+        if (state.currentPlacerId) currentPlacerId = state.currentPlacerId;
+
+        if (state.boardData) boardData = state.boardData;
+        if (state.gameMode) gameMode = state.gameMode;
+        if (state.ROWS) { ROWS = state.ROWS; updateBoardLayout(); }
+        currentShape = state.currentShape || null;
+        pieceX = state.pieceX || 0; pieceY = state.pieceY || 0;
+        stockCount = state.stockCount || 0;
+        excludedMinos = new Set(state.excludedMinos || []);
+        nextTetrisMinoId = state.nextTetrisMinoId || null;
+        
+        if (state.gameTime !== undefined) {
+            gameTime = state.gameTime;
+            document.getElementById('time-display').innerText = gameTime;
+        }
+        if (state.gameLevel !== undefined) {
+            gameLevel = state.gameLevel;
+            document.getElementById('level-display').innerText = gameLevel === 4 ? "4(MAX)" : gameLevel;
+        }
+        if (state.currentDropSpeed !== undefined) currentDropSpeed = state.currentDropSpeed;
+        if (state.timeLeft !== undefined) {
+            timeLeft = state.timeLeft;
+            document.getElementById('timer-display').innerText = timeLeft > 0 ? `${timeLeft}秒` : "";
+        }
+
+        updateUIBasedOnMode();
+        updateExcludeUI_NoSync(); 
+        drawNextTetrisMinoUI(); 
+        drawBoard();
+
+        checkAndResumeTimers();
+    });
 </script>
 </body>
 </html>
