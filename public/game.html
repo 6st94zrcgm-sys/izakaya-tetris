@@ -129,6 +129,14 @@
     const myName = localStorage.getItem('izakaya_player_name');
 
     if (!roomId || !myClientId) window.location.href = '/index.html';
+    
+    // ★修正3：画面の初期化を通信前に行う（フリーズ防止）
+    let ROWS = 20; const COLS = 10;
+    let boardData = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    initExcludeUI();
+    updateBoardLayout();
+    drawBoard();
+
     socket.emit('joinRoom', roomId);
 
     let players = []; 
@@ -137,8 +145,6 @@
     let currentPlacerId = null; 
     let gameMode = 'TETRIS'; 
 
-    let ROWS = 20; const COLS = 10;
-    let boardData = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
     let currentShape = null; let pieceX = 0; let pieceY = 0;
     let dropTimer = null; let countdownTimer = null; let timeLeft = 5;
     let gameTime = 0; let gameLevel = 1; let currentDropSpeed = 800; let timeInterval = null;
@@ -165,7 +171,6 @@
         });
     }
 
-    // ★修正：サーバーから最新データが届いた瞬間に、必要ならゲームを動かす
     socket.on('syncState', (state) => {
         if (!state) return;
         
@@ -207,11 +212,9 @@
         drawNextTetrisMinoUI(); 
         drawBoard();
 
-        // ★追加：ここで「自分が担当」かつ「まだタイマーが動いていない」なら起動する！
         checkAndResumeTimers();
     });
 
-    // ★追加：タイマー起動用関数
     function checkAndResumeTimers() {
         if (gameMode === 'TETRIS' && tetrisPlayerId === myClientId) {
             if (!dropTimer) {
@@ -473,10 +476,14 @@
 
     function updateExcludeUI_NoSync() {
         const btns = document.getElementById('exclude-btns').children;
+        if (btns.length === 0) return; // ★修正4：フリーズの原因を完全ブロック
+        
         for (let i = 0; i < 7; i++) {
             const id = i + 1;
-            if (excludedMinos.has(id)) btns[i].classList.add('excluded'); 
-            else btns[i].classList.remove('excluded');
+            if (btns[i]) {
+                if (excludedMinos.has(id)) btns[i].classList.add('excluded'); 
+                else btns[i].classList.remove('excluded');
+            }
         }
         updateStockUI(); drawAvailableMinos();
     }
@@ -661,7 +668,7 @@
     addInstantClick('btn-rotate', rotateShape);
     addInstantClick('btn-drop', hardDrop);
 
-    updateBoardLayout(); updateUIBasedOnMode(); initExcludeUI(); drawBoard();
+    updateUIBasedOnMode(); 
 </script>
 </body>
 </html>
