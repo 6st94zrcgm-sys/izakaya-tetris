@@ -104,7 +104,7 @@
 
             renderLobby();
             
-            // ★修正：誰かが状態を更新するたびにホストが完了チェックを行う
+            // ★修正1：ゲストが確定したタイミングでも、ホストが全員終わったかチェックする
             checkVotingComplete();
         });
 
@@ -125,13 +125,12 @@
 
             votedCompletes.push(myClientId); 
             broadcast();
-            checkVotingComplete(); 
+            checkVotingComplete();
         };
 
         function checkVotingComplete() {
             const isHost = players.length > 0 && players[0].id === myClientId;
             
-            // ホストの画面で全員の確定を確認した場合
             if (isHost && votedCompletes.length === players.length && gameMode === 'VOTING') {
                 let counts = {};
                 for (let v in votes) counts[votes[v]] = (counts[votes[v]] || 0) + 1;
@@ -142,8 +141,6 @@
                 }
                 const tetrisPlayerId = winners.sort()[0];
 
-                gameMode = 'TETRIS'; // 先にローカルのモードを変更
-
                 socket.emit('updateState', { 
                     players, 
                     tetrisPlayerId, 
@@ -152,8 +149,10 @@
                     stockCount: 0, excludedMinos: []
                 });
 
-                // ★修正：ホスト自身も強制的にゲーム画面へワープさせる
-                window.location.href = `/game.html?room=${roomId}`;
+                // ★修正2：通信を送信した後、ホスト自身も100ms後にゲーム画面へ確実に移動する
+                setTimeout(() => {
+                    window.location.href = `/game.html?room=${roomId}`;
+                }, 100);
             }
         }
 
