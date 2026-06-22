@@ -55,20 +55,19 @@
         let players = [];
         let votes = {};
         let gameMode = 'LOBBY';
-        let receivedSync = false; // ★追加：サーバーから返事が来たかどうかのフラグ
+        let receivedSync = false;
 
         function broadcast() {
             socket.emit('updateState', { players, votes, gameMode });
         }
 
         socket.on('syncState', (state) => {
-            receivedSync = true; // 返事が来た！
+            receivedSync = true;
 
             if (!state || Object.keys(state).length === 0) {
-                // まだ部屋に何もない場合（自分が1人目）
                 players = [{ id: myClientId, name: myName, isReady: false }];
                 broadcast();
-                renderLobby(); // ★追加：ここで画面を描画する
+                renderLobby(); 
                 return;
             }
 
@@ -76,26 +75,23 @@
             votes = state.votes || {};
             gameMode = state.gameMode || 'LOBBY';
 
-            // ゲームが始まったら自動でゲーム画面へワープ！
             if (gameMode === 'TETRIS' || gameMode === 'IZAKAYA') {
                 window.location.href = `/game.html?room=${roomId}`;
                 return;
             }
 
-            // 新しく来た人なら自分を追加、既にいるなら名前を最新に更新
             let me = players.find(p => p.id === myClientId);
             if (!me) {
                 players.push({ id: myClientId, name: myName, isReady: false });
                 broadcast();
             } else if (me.name !== myName) {
-                me.name = myName; // 名前変更して戻ってきた場合の処理
+                me.name = myName; 
                 broadcast();
             }
 
             renderLobby();
         });
 
-        // ★追加：1人目問題の救済処置（0.3秒待って返事がなければ強行突破）
         setTimeout(() => {
             if (!receivedSync) {
                 players = [{ id: myClientId, name: myName, isReady: false }];
@@ -126,9 +122,8 @@
                     if (counts[id] > max) { max = counts[id]; winners = [id]; }
                     else if (counts[id] === max) winners.push(id);
                 }
-                const tetrisPlayerId = winners.sort()[0]; // 同票ならID順で確定
+                const tetrisPlayerId = winners.sort()[0];
 
-                // ゲーム開始フラグを立てて、ゲーム画面の設定を送信
                 socket.emit('updateState', { 
                     players, 
                     tetrisPlayerId, 
@@ -153,10 +148,26 @@
                 players.forEach(p => {
                     const li = document.createElement('li');
                     li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom = '10px'; li.style.alignItems = 'center';
-                    const btnHtml = p.id === myClientId 
-                        ? `<button onclick="toggleReady()" style="background:${p.isReady ? '#555' : '#007bff'}; color:white; border:none; padding:6px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">${p.isReady ? '取消' : '準備完了'}</button>`
-                        : `<span style="color:${p.isReady ? '#00ffcc' : '#888'}; font-weight:bold;">${p.isReady ? 'OK' : '準備中'}</span>`;
-                    li.innerHTML = `<span>${p.id === players[0].id ? '👑' : ''} ${p.name}</span> ${btnHtml}`;
+                    
+                    // ★変更部分：自分が準備完了した時のUIを劇的に分かりやすくしました
+                    let statusHtml = '';
+                    if (p.id === myClientId) {
+                        if (p.isReady) {
+                            statusHtml = `
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <span style="color:#00ffcc; font-weight:bold;">✅ 準備OK!</span>
+                                    <button onclick="toggleReady()" style="background:#555; color:white; border:none; padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">取消</button>
+                                </div>
+                            `;
+                        } else {
+                            statusHtml = `<button onclick="toggleReady()" style="background:#007bff; color:white; border:none; padding:6px 15px; border-radius:4px; font-weight:bold; cursor:pointer;">準備完了にする</button>`;
+                        }
+                    } else {
+                        // 他の人の状態表示
+                        statusHtml = `<span style="color:${p.isReady ? '#00ffcc' : '#888'}; font-weight:bold;">${p.isReady ? '✅ 準備OK' : '⏳ 準備中...'}</span>`;
+                    }
+
+                    li.innerHTML = `<span>${p.id === players[0].id ? '👑' : ''} ${p.name}</span> ${statusHtml}`;
                     ul.appendChild(li);
                     if (!p.isReady) allReady = false;
                 });
