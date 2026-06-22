@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>待機ロビー - 居酒屋テトリス</title>
+    <style>
+        body { background-color: #222; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+        .panel { background: #333; padding: 15px; border-radius: 8px; width: 100%; max-width: 340px; box-sizing: border-box; margin-bottom: 10px; }
+        .action-btn { padding: 8px 12px; font-weight: bold; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+        .action-btn:disabled { background-color: #555; color: #888; cursor: not-allowed; }
+        .vote-btn { background: #444; color: white; border: 2px solid #555; padding: 10px; width: 100%; margin-bottom: 5px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .vote-btn.selected { background: #ff5555; border-color: #fff; }
+    </style>
+</head>
+<body>
+    <div style="background:#444; padding:5px 10px; border-radius:5px; font-size:11px; margin-bottom:10px;">
+        招待URL: <span id="room-url" style="color:#00ffcc;"></span>
+        <button onclick="navigator.clipboard.writeText(window.location.href); alert('コピーしました');" style="margin-left:5px;">コピー</button>
+    </div>
+
+    <div id="lobby-view" class="panel">
+        <h2 style="color: #00ffcc; text-align: center; margin-top: 0;">待機ロビー</h2>
+        <button onclick="window.location.href='/index.html?room=' + roomId" style="background:#555; color:white; border:none; padding:5px; border-radius:3px; font-size:12px; margin-bottom:10px; width:100%;">✏️ 名前を変更する</button>
+        
+        <ul id="player-list" style="list-style: none; padding: 0;"></ul>
+
+        <div id="host-controls" style="display: none; background: #444; padding: 10px; border-radius: 5px; margin-top: 15px;">
+            <div style="color:#ffcc00; text-align:center; font-weight:bold; margin-bottom:5px;">👑 ホストメニュー</div>
+            <button id="start-vote-btn" class="action-btn" style="background: #007bff;" disabled>全員の準備を待つ...</button>
+        </div>
+    </div>
+
+    <div id="voting-view" class="panel" style="display: none;">
+        <h2 style="color: #ff5555; text-align: center; margin-top: 0;">犠牲者投票</h2>
+        <p style="font-size: 12px; text-align: center;">テトリスをプレイする人を1人選んでください</p>
+        <div id="vote-buttons"></div>
+        <div id="vote-status" style="text-align: center; margin-top: 10px; color: #00ffcc; font-weight: bold;"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room');
+        const myClientId = localStorage.getItem('izakaya_client_id');
+        const myName = localStorage.getItem('izakaya_player_name');
+
+        // URLがおかしい、または名前がない場合はやり直し
+        if (!roomId || !myClientId || !myName) window.location.href = '/index.html';
+
+        document.getElementById('room-url').innerText = window.location.href;
+        socket.emit('joinRoom', roomId);
+
+        let players = [];
+        let votes = {};
+        let gameMode = 'LOBBY';
+
+        function broadcast() {
+            socket.emit('updateState', { players, votes, gameMode });
+        }
+
+        socket.on('syncState', (state) => {
+            if (!state || Object.keys(state).length === 0) {
+                // 初回アクセス時、自分を登録
+                players = [{ id: myClientId, name: myName, isReady: false }];
+                broadcast();
+                return;
+            }
+
+            players = state.players || [];
+            votes = state.votes || {};
+            gameMode = state.gameMode || 'LOBBY';
+
+            // ゲームが始まったら自動でゲーム画面へワープ！
+            if (gameMode === 'TETRIS' || gameMode === 'IZAKAYA') {
+                window.location.href = `/game.html?room=${roomId}`;
+                return;
+            }
+
+            // 新しく来た人なら自分を追加
+            if (!players.find(p => p.id === myClientId)) {
+                players.push({ id: myClientId, name: myName, isReady: false });
+                broadcast();
+            }
+
+            renderLobby();
+        });
+
+        function toggleReady() {
+            const me = players.find(p => p.id === myClientId);
+            if (me) { me.isReady = !me.isReady; broadcast(); }
+        }
+
+        function castVote(targetId) {
+            votes[myClientId] = targetId;
+            broadcast();
+            checkVotingComplete();
+        }
+
+        function checkVotingComplete() {
+            const isHost = players.length > 0 && players[0].id === myClientId;
+            if (isHost && Object.keys(votes).length === players.length) {
+                let counts = {};
+                for (let v in votes) counts[votes[v]] = (counts[votes[v]] || 0) + 1;
+                let max = 0; let winners = [];
+                for (let id in counts) {
+                    if (counts[id] > max) { max = counts[id]; winners = [id]; }
+                    else if (counts[id] === max) winners.push(id);
+                }
+                const tetrisPlayerId = winners.sort()[0]; // 同票ならID順
+
+                // ゲーム開始フラグを立てて、ゲーム画面の設定を送信
+                socket.emit('updateState', { 
+                    players, 
+                    tetrisPlayerId, 
+                    gameMode: 'TETRIS', // ここでゲーム画面に飛ばす
+                    gameTime: 0, gameLevel: 1, currentDropSpeed: 800,
+                    stockCount: 0, excludedMinos: []
+                });
+            }
+        }
+
+        function renderLobby() {
+            const isHost = players.length > 0 && players[0].id === myClientId;
+            
+            if (gameMode === 'LOBBY') {
+                document.getElementById('lobby-view').style.display = 'block';
+                document.getElementById('voting-view').style.display = 'none';
+
+                const ul = document.getElementById('player-list');
+                ul.innerHTML = '';
+                let allReady = players.length > 0;
+
+                players.forEach(p => {
+                    const li = document.createElement('li');
+                    li.style.display = 'flex'; li.style.justifyContent = 'space-between'; li.style.marginBottom = '10px';
+                    const btnHtml = p.id === myClientId 
+                        ? `<button onclick="toggleReady()" style="background:${p.isReady ? '#555' : '#007bff'}; color:white; border:none; padding:4px 8px; border-radius:4px;">${p.isReady ? '取消' : '準備完了'}</button>`
+                        : `<span style="color:${p.isReady ? '#00ffcc' : '#888'}">${p.isReady ? 'OK' : '準備中'}</span>`;
+                    li.innerHTML = `<span>${p.id === players[0].id ? '👑' : ''} ${p.name}</span> ${btnHtml}`;
+                    ul.appendChild(li);
+                    if (!p.isReady) allReady = false;
+                });
+
+                if (isHost) {
+                    document.getElementById('host-controls').style.display = 'block';
+                    const startBtn = document.getElementById('start-vote-btn');
+                    if (allReady) {
+                        startBtn.disabled = false; startBtn.innerText = '▶ 投票画面へ';
+                        startBtn.onclick = () => { gameMode = 'VOTING'; votes = {}; broadcast(); };
+                    } else {
+                        startBtn.disabled = true; startBtn.innerText = '全員の準備を待つ...';
+                    }
+                }
+            } else if (gameMode === 'VOTING') {
+                document.getElementById('lobby-view').style.display = 'none';
+                document.getElementById('voting-view').style.display = 'block';
+
+                const btnContainer = document.getElementById('vote-buttons');
+                btnContainer.innerHTML = '';
+                players.forEach(p => {
+                    const btn = document.createElement('button');
+                    btn.className = `vote-btn ${votes[myClientId] === p.id ? 'selected' : ''}`;
+                    btn.innerText = p.name;
+                    btn.onclick = () => castVote(p.id);
+                    btnContainer.appendChild(btn);
+                });
+                document.getElementById('vote-status').innerText = `投票済: ${Object.keys(votes).length} / ${players.length}`;
+            }
+        }
+    </script>
+</body>
+</html>
